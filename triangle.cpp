@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstring>
 #include <array>
+#include <optional>
 
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
@@ -97,7 +98,44 @@ void DestroyDebugUtilsMessengerEXT
 		fn (instance, messenger, allocator);
 }
 
+struct QueueFamilyIndices
+{
+	std::optional<uint32_t> gfx_family;
 
+	bool is_complete ()
+	{
+		return gfx_family.has_value ();
+	}
+};
+
+QueueFamilyIndices find_queue_families (VkPhysicalDevice dev)
+{
+	QueueFamilyIndices idx;
+
+	uint32_t count = 0;
+
+	vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, nullptr);
+	std::vector<VkQueueFamilyProperties> families (count);
+	vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, families.data ());
+
+	int i = 0;
+	for (const auto& family : families)
+	{
+		if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			idx.gfx_family = i;
+
+		if (idx.is_complete ())
+			break;
+
+		i ++;
+	}
+
+	return idx;
+}
+
+/**
+ * Main application to display a triangle. Feels a bit overkill...
+ */
 class HelloTriangleApplication
 {
 public:
@@ -113,6 +151,7 @@ private:
 	GLFWwindow* win;
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debug_messenger;
+	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -237,10 +276,50 @@ private:
 		}
 	}
 
+	bool is_device_suitable (VkPhysicalDevice dev)
+	{
+		// Apparently this was just an example on how to do it.
+		/*
+		VkPhysicalDeviceProperties props;
+		vkGetPhysicalDeviceProperties (dev, &props);
+
+		VkPhysicalDeviceFeatures feats;
+		vkGetPhysicalDeviceFeatures (dev, &feats);
+
+		return props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && feats.geometryShader;
+		*/
+
+		QueueFamilyIndices i = find_queue_families (dev);
+		return i.is_complete ();
+	}
+
+	void pick_physical_device ()
+	{
+		uint32_t count;
+		vkEnumeratePhysicalDevices (instance, &count, nullptr);
+		if (count == 0)
+			throw std::runtime_error ("failed to find GPUs with Vulkan support!");
+
+		std::vector<VkPhysicalDevice> devices (count);
+		vkEnumeratePhysicalDevices (instance, &count, devices.data ());
+		for (const auto& dev : devices)
+		{
+			if (is_device_suitable (dev))
+			{
+				physical_device = dev;
+				break;
+			}
+		}
+
+		if (physical_device == VK_NULL_HANDLE)
+			throw std::runtime_error ("failed to find a suitable GPU!");
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
 		setup_debugger ();
+		pick_physical_device ();
 	}
 
 	void main ()
