@@ -152,6 +152,8 @@ private:
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debug_messenger;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+	VkDevice device;
+	VkQueue gfx_queue;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -279,16 +281,14 @@ private:
 	bool is_device_suitable (VkPhysicalDevice dev)
 	{
 		// Apparently this was just an example on how to do it.
-		/*
 		VkPhysicalDeviceProperties props;
 		vkGetPhysicalDeviceProperties (dev, &props);
 
 		VkPhysicalDeviceFeatures feats;
 		vkGetPhysicalDeviceFeatures (dev, &feats);
 
-		return props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && feats.geometryShader;
-		*/
-
+		//return props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && feats.geometryShader;
+		std::cout << "\t" << props.deviceName << std::endl;
 		QueueFamilyIndices i = find_queue_families (dev);
 		return i.is_complete ();
 	}
@@ -302,6 +302,7 @@ private:
 
 		std::vector<VkPhysicalDevice> devices (count);
 		vkEnumeratePhysicalDevices (instance, &count, devices.data ());
+		std::cout << "searching suitable device:" << std::endl;
 		for (const auto& dev : devices)
 		{
 			if (is_device_suitable (dev))
@@ -315,11 +316,40 @@ private:
 			throw std::runtime_error ("failed to find a suitable GPU!");
 	}
 
+	void create_logical_device ()
+	{
+		QueueFamilyIndices idx = find_queue_families (physical_device);
+
+		VkDeviceQueueCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		info.queueFamilyIndex = idx.gfx_family.value ();
+		info.queueCount = 1;
+
+		float prio = 1.0f;
+		info.pQueuePriorities = &prio;
+
+		info.enabledExtensionsCount = 0;
+
+		if (enable_validation_layers)
+		{
+			info.enabledLayerCount = validation_layers.size ();
+			info.ppEnableLayerNames = validation_layers.data ();
+		}
+		else
+			info.enabledLayerCount = 0;
+
+		if (vkCreateDevice (physical_device, &info, nullptr, &dev) != VK_SUCCESS)
+			throw std::runtime_error ("failed to create logical device!");
+
+		vkGetDeviceQueue (device, idx.gfx_family.value (), 0, &gfx_queue);
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
 		setup_debugger ();
 		pick_physical_device ();
+		create_logical_device ();
 	}
 
 	void main ()
@@ -332,6 +362,8 @@ private:
 
 	void cleanup ()
 	{
+		vkDestroyDevice (device, nullptr);
+
 		if (enable_validation_layers)
 			DestroyDebugUtilsMessengerEXT (instance, debug_messenger, nullptr);
 
