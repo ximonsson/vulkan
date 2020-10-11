@@ -1,15 +1,15 @@
-CFLAGS = -std=c++17 -O2
+CFLAGS = -std=c++17 -O2 -DNDEBUG=1
 LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
 
 all: template triangle
 
 .PHONY: test clean
 
-template: main.ccp
-	g++ $(CFLAGS) -o vulkan main.cpp $(LDFLAGS)
+template: main.cpp
+	g++ $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 triangle: triangle.cpp
-	g++ $(CFLAGS) -o vulkan $^ $(LDFLAGS)
+	g++ $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 test: all
 	./vulkan
