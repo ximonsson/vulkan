@@ -7,6 +7,7 @@
 #include <cstring>
 #include <array>
 #include <optional>
+#include <set>
 
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
@@ -101,37 +102,13 @@ void DestroyDebugUtilsMessengerEXT
 struct QueueFamilyIndices
 {
 	std::optional<uint32_t> gfx_family;
+	std::optional<uint32_t> present_family;
 
 	bool is_complete ()
 	{
-		return gfx_family.has_value ();
+		return gfx_family.has_value () && present_family.has_value ();
 	}
 };
-
-QueueFamilyIndices find_queue_families (VkPhysicalDevice dev)
-{
-	QueueFamilyIndices idx;
-
-	uint32_t count = 0;
-
-	vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, nullptr);
-	std::vector<VkQueueFamilyProperties> families (count);
-	vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, families.data ());
-
-	int i = 0;
-	for (const auto& family : families)
-	{
-		if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-			idx.gfx_family = i;
-
-		if (idx.is_complete ())
-			break;
-
-		i ++;
-	}
-
-	return idx;
-}
 
 /**
  * Main application to display a triangle. Feels a bit overkill...
@@ -152,8 +129,10 @@ private:
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debug_messenger;
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-	VkDevice device;
+	VkDevice device; // logical device
 	VkQueue gfx_queue;
+	VkQueue present_queue;
+	VkSurfaceKHR surface;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -278,6 +257,37 @@ private:
 		}
 	}
 
+	QueueFamilyIndices find_queue_families (VkPhysicalDevice dev)
+	{
+		QueueFamilyIndices idx;
+
+		uint32_t count = 0;
+
+		vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, nullptr);
+		std::vector<VkQueueFamilyProperties> families (count);
+		vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, families.data ());
+
+		int i = 0;
+		for (const auto& family : families)
+		{
+			if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+				idx.gfx_family = i;
+
+			VkBool32 present_support = false;
+			vkGetPhysicalDeviceSurfaceSupportKHR (dev, i, surface, &present_support);
+
+			if (present_support)
+				idx.present_family = i;
+
+			if (idx.is_complete ())
+				break;
+
+			i ++;
+		}
+
+		return idx;
+	}
+
 	bool is_device_suitable (VkPhysicalDevice dev)
 	{
 		// Apparently this was just an example on how to do it.
@@ -320,34 +330,55 @@ private:
 	{
 		QueueFamilyIndices idx = find_queue_families (physical_device);
 
-		VkDeviceQueueCreateInfo info {};
-		info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-		info.queueFamilyIndex = idx.gfx_family.value ();
-		info.queueCount = 1;
+		std::vector<VkDeviceQueueCreateInfo> qinfos;
+		std::set<uint32_t> families = { idx.gfx_family.value (), idx.present_family.value () };
 
 		float prio = 1.0f;
-		info.pQueuePriorities = &prio;
 
-		info.enabledExtensionsCount = 0;
+		for (uint32_t family : families)
+		{
+			VkDeviceQueueCreateInfo qinfo {};
+			qinfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			qinfo.queueFamilyIndex = idx.gfx_family.value ();
+			qinfo.queueCount = 1;
+			qinfo.pQueuePriorities = &prio;
+			qinfos.push_back (qinfo);
+		}
+
+		VkPhysicalDeviceFeatures feats {};
+		VkDeviceCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		info.pQueueCreateInfos = qinfos.data ();
+		info.queueCreateInfoCount = qinfos.size ();
+		info.pEnabledFeatures = &feats;
+		info.enabledExtensionCount = 0;
 
 		if (enable_validation_layers)
 		{
 			info.enabledLayerCount = validation_layers.size ();
-			info.ppEnableLayerNames = validation_layers.data ();
+			info.ppEnabledLayerNames = validation_layers.data ();
 		}
 		else
 			info.enabledLayerCount = 0;
 
-		if (vkCreateDevice (physical_device, &info, nullptr, &dev) != VK_SUCCESS)
+		if (vkCreateDevice (physical_device, &info, nullptr, &device) != VK_SUCCESS)
 			throw std::runtime_error ("failed to create logical device!");
 
 		vkGetDeviceQueue (device, idx.gfx_family.value (), 0, &gfx_queue);
+		vkGetDeviceQueue (device, idx.present_family.value (), 0, &present_queue);
+	}
+
+	void create_surface ()
+	{
+		if (glfwCreateWindowSurface (instance, win, nullptr, &surface) != VK_SUCCESS)
+			throw std::runtime_error ("failed to create window surface!");
 	}
 
 	void init_vulkan ()
 	{
 		create_instance ();
 		setup_debugger ();
+		create_surface ();
 		pick_physical_device ();
 		create_logical_device ();
 	}
@@ -367,6 +398,7 @@ private:
 		if (enable_validation_layers)
 			DestroyDebugUtilsMessengerEXT (instance, debug_messenger, nullptr);
 
+		vkDestroySurfaceKHR (instance, surface, nullptr);
 		vkDestroyInstance (instance, nullptr);
 		glfwDestroyWindow (win);
 		glfwTerminate ();
