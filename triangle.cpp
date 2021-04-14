@@ -170,6 +170,8 @@ private:
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
 	std::vector<VkFramebuffer> swapchain_framebufs;
+	VkCommandPool cmdpool;
+	std::vector<VkCommandBuffer> cmdbuffers;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -819,6 +821,63 @@ private:
 		}
 	}
 
+	void create_cmd_pool ()
+	{
+		QueueFamilyIndices idx = find_queue_families (physical_device);
+
+		VkCommandPoolCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		info.queueFamilyIndex = idx.gfx_family.value();
+		info.flags = 0; // optional
+
+		if (vkCreateCommandPool (device, &info, nullptr, &cmdpool) != VK_SUCCESS)
+			throw std::runtime_error ("failed to create command pool!");
+	}
+
+	void create_cmd_buffers ()
+	{
+		cmdbuffers.resize (swapchain_framebufs.size ());
+
+		VkCommandBufferAllocateInfo allocinfo {};
+		allocinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocinfo.commandPool = cmdpool;
+		allocinfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocinfo.commandBufferCount = (uint32_t) cmdbuffers.size ();
+
+		if (vkAllocateCommandBuffers (device, &allocinfo, cmdbuffers.data ()) != VK_SUCCESS)
+			throw std::runtime_error ("failed to allocate command buffers!");
+
+		for (size_t i = 0; i < cmdbuffers.size (); i ++)
+		{
+			VkCommandBufferBeginInfo info {};
+			info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			info.flags = 0; // optional
+			info.pInheritanceInfo = nullptr; // optional
+
+			if (vkBeginCommandBuffer (cmdbuffers[i], &info) != VK_SUCCESS)
+				throw std::runtime_error ("failed to begin recording command buffer!");
+
+			VkClearValue clear_clr = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+			VkRenderPassBeginInfo render_pass_info {};
+			render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			render_pass_info.renderPass = render_pass;
+			render_pass_info.framebuffer = swapchain_framebufs[i];
+			render_pass_info.renderArea.offset = { 0, 0 };
+			render_pass_info.renderArea.extent = swapchain_ext;
+			render_pass_info.clearValueCount = 1;
+			render_pass_info.pClearValues = &clear_clr;
+
+			vkCmdBeginRenderPass (cmdbuffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+			vkCmdBindPipeline (cmdbuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+			vkCmdDraw (cmdbuffers[i], 3, 1, 0, 0);
+			vkCmdEndRenderPass (cmdbuffers[i]);
+
+			if (vkEndCommandBuffer (cmdbuffers[i]) != VK_SUCCESS)
+				throw std::runtime_error ("failed to record command buffer!");
+		}
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -831,6 +890,8 @@ private:
 		create_render_pass ();
 		create_gfx_pipeline ();
 		create_framebuffers ();
+		create_cmd_pool ();
+		create_cmd_buffers ();
 	}
 
 	void main ()
@@ -843,6 +904,8 @@ private:
 
 	void cleanup ()
 	{
+		vkDestroyCommandPool (device, cmdpool, nullptr);
+
 		for (auto buf : swapchain_framebufs)
 			vkDestroyFramebuffer (device, buf, nullptr);
 
