@@ -1,7 +1,8 @@
 CFLAGS = -std=c++17 -O2 -DNDEBUG=1
 LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
+GLSL = glslangValidator
 
-all: template triangle
+all: template shades triangle
 
 .PHONY: test clean
 
@@ -10,6 +11,10 @@ template: main.cpp
 
 triangle: triangle.cpp
 	g++ $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+shades: shaders/shader.vert shaders/shader.frag
+	$(GLSL) -V -o shaders/vert.spv shaders/shader.vert
+	$(GLSL) -V -o shaders/frag.spv shaders/shader.frag
 
 test: all
 	./vulkan

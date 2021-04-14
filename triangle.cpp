@@ -8,12 +8,28 @@
 #include <array>
 #include <optional>
 #include <set>
+#include <fstream>
 
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+
+static std::vector<char> read_file (const std::string& filename)
+{
+	std::ifstream file (filename, std::ios::ate | std::ios::binary);
+	if (!file.is_open ())
+		throw std::runtime_error ("failed to open file!");
+
+	size_t fsize = (size_t) file.tellg ();
+	std::vector<char> buffer (fsize);
+	file.seekg (0);
+	file.read (buffer.data (), fsize);
+	file.close ();
+
+	return buffer;
+}
 
 const std::vector<const char*> validation_layers =
 {
@@ -583,6 +599,46 @@ private:
 		}
 	}
 
+	VkShaderModule create_shader_module (const std::vector<char>& code)
+	{
+		VkShaderModuleCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		info.codeSize = code.size ();
+		info.pCode = reinterpret_cast<const uint32_t*> (code.data ());
+
+		VkShaderModule mod;
+		if (vkCreateShaderModule (device, &info, nullptr, &mod) != VK_SUCCESS)
+			throw std::runtime_error ("failed to create shader module!");
+
+		return mod;
+	}
+
+	void create_gfx_pipeline ()
+	{
+		auto vert_shader_code = read_file ("shaders/vert.spv");
+		auto frag_shader_code = read_file ("shaders/frag.spv");
+
+		VkShaderModule vert_shader_mod = create_shader_module (vert_shader_code);
+		VkShaderModule frag_shader_mod = create_shader_module (frag_shader_code);
+
+		VkPipelineShaderStageCreateInfo vxinfo {};
+		vxinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vxinfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vxinfo.module = vert_shader_mod;
+		vxinfo.pName = "main";
+
+		VkPipelineShaderStageCreateInfo fginfo {};
+		fginfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fginfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fginfo.module = frag_shader_mod;
+		fginfo.pName = "main";
+
+		VkPipelineShaderStageCreateInfo stages[] = { vxinfo, fginfo };
+
+		vkDestroyShaderModule (device, vert_shader_mod, nullptr);
+		vkDestroyShaderModule (device, frag_shader_mod, nullptr);
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -592,6 +648,7 @@ private:
 		create_logical_device ();
 		create_swap_chain ();
 		create_image_views ();
+		create_gfx_pipeline ();
 	}
 
 	void main ()
