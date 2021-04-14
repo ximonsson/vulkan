@@ -169,6 +169,7 @@ private:
 	VkRenderPass render_pass;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
+	std::vector<VkFramebuffer> swapchain_framebufs;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -796,6 +797,28 @@ private:
 			throw std::runtime_error ("failed to create render pass!");
 	}
 
+	void create_framebuffers ()
+	{
+		swapchain_framebufs.resize (swapchain_image_views.size ());
+
+		for (size_t i = 0; i < swapchain_image_views.size (); i ++)
+		{
+			VkImageView attachments[] = { swapchain_image_views[i] };
+
+			VkFramebufferCreateInfo info {};
+			info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			info.renderPass = render_pass;
+			info.attachmentCount = 1;
+			info.pAttachments = attachments;
+			info.width = swapchain_ext.width;
+			info.height = swapchain_ext.height;
+			info.layers = 1;
+
+			if (vkCreateFramebuffer (device, &info, nullptr, &swapchain_framebufs[i]) != VK_SUCCESS)
+				throw std::runtime_error ("failed to create framebuffer!");
+		}
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -807,6 +830,7 @@ private:
 		create_image_views ();
 		create_render_pass ();
 		create_gfx_pipeline ();
+		create_framebuffers ();
 	}
 
 	void main ()
@@ -819,6 +843,9 @@ private:
 
 	void cleanup ()
 	{
+		for (auto buf : swapchain_framebufs)
+			vkDestroyFramebuffer (device, buf, nullptr);
+
 		vkDestroyPipeline (device, pipeline, nullptr);
 		vkDestroyPipelineLayout (device, pipeline_layout, nullptr);
 		vkDestroyRenderPass (device, render_pass, nullptr);
