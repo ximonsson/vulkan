@@ -15,6 +15,7 @@
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+const int MAX_FRAMES_IN_FLIGHT = 2;
 
 static std::vector<char> read_file (const std::string& filename)
 {
@@ -172,6 +173,8 @@ private:
 	std::vector<VkFramebuffer> swapchain_framebufs;
 	VkCommandPool cmdpool;
 	std::vector<VkCommandBuffer> cmdbuffers;
+	VkSemaphore img_available;
+	VkSemaphore render_finished;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -769,6 +772,14 @@ private:
 
 	void create_render_pass ()
 	{
+		VkSubpassDependency dep {};
+		dep.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dep.dstSubpass = 0;
+		dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dep.srcAccessMask = 0;
+		dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
 		VkAttachmentDescription color {};
 		color.format = swapchain_img_fmt;
 		color.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -794,6 +805,8 @@ private:
 		info.pAttachments = &color;
 		info.subpassCount = 1;
 		info.pSubpasses = &subpass;
+		info.dependencyCount = 1;
+		info.pDependencies = &dep;
 
 		if (vkCreateRenderPass (device, &info, nullptr, &render_pass) != VK_SUCCESS)
 			throw std::runtime_error ("failed to create render pass!");
@@ -878,6 +891,20 @@ private:
 		}
 	}
 
+	void create_semaphores ()
+	{
+		VkSemaphoreCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		if
+		(
+			vkCreateSemaphore (device, &info, nullptr, &img_available) != VK_SUCCESS ||
+			vkCreateSemaphore (device, &info, nullptr, &render_finished) != VK_SUCCESS
+		)
+			throw std::runtime_error ("failed to create semaphores!");
+
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -892,6 +919,47 @@ private:
 		create_framebuffers ();
 		create_cmd_pool ();
 		create_cmd_buffers ();
+		create_semaphores ();
+	}
+
+	void draw ()
+	{
+		uint32_t img_idx;
+
+		vkAcquireNextImageKHR (device, swap_chain, UINT64_MAX, img_available, VK_NULL_HANDLE, &img_idx);
+
+		VkSemaphore wait_semaphores[] = { img_available };
+		VkSemaphore sig_semaphores[] = { render_finished };
+
+		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+		VkSubmitInfo submit_info {};
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.waitSemaphoreCount = 1;
+		submit_info.pWaitSemaphores = wait_semaphores;
+		submit_info.pWaitDstStageMask = wait_stages;
+		submit_info.commandBufferCount = 1;
+		submit_info.pCommandBuffers = &cmdbuffers[img_idx];
+		submit_info.signalSemaphoreCount = 1;
+		submit_info.pSignalSemaphores = sig_semaphores;
+
+		if (vkQueueSubmit (gfx_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+			throw std::runtime_error ("failed to submit draw command buffer!");
+
+		VkSwapchainKHR swapchains[] = { swap_chain };
+
+		VkPresentInfoKHR present_info {};
+		present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		present_info.waitSemaphoreCount = 1;
+		present_info.pWaitSemaphores = sig_semaphores;
+		present_info.swapchainCount = 1;
+		present_info.pSwapchains = swapchains;
+		present_info.pImageIndices = &img_idx;
+		present_info.pResults = nullptr; // optional
+
+		vkQueuePresentKHR (present_queue, &present_info);
+
+		vkQueueWaitIdle (present_queue);
 	}
 
 	void main ()
@@ -899,11 +967,17 @@ private:
 		while (!glfwWindowShouldClose (win))
 		{
 			glfwPollEvents ();
+			draw ();
 		}
+
+		vkDeviceWaitIdle (device);
 	}
 
 	void cleanup ()
 	{
+		vkDestroySemaphore (device, render_finished, nullptr);
+		vkDestroySemaphore (device, img_available, nullptr);
+
 		vkDestroyCommandPool (device, cmdpool, nullptr);
 
 		for (auto buf : swapchain_framebufs)
