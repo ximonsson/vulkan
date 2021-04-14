@@ -149,6 +149,7 @@ private:
 	std::vector<VkImage> swapchain_images;
 	VkFormat swapchain_img_fmt;
 	VkExtent2D swapchain_ext;
+	std::vector<VkImageView> swapchain_image_views;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -556,6 +557,32 @@ private:
 		swapchain_ext = ext;
 	}
 
+	void create_image_views ()
+	{
+		swapchain_image_views.resize (swapchain_images.size ());
+
+		for (size_t i = 0; i < swapchain_images.size (); i ++)
+		{
+			VkImageViewCreateInfo info {};
+			info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			info.image = swapchain_images[i];
+			info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			info.format = swapchain_img_fmt;
+			info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+			info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+			info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+			info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			info.subresourceRange.baseMipLevel = 0;
+			info.subresourceRange.levelCount = 1;
+			info.subresourceRange.baseArrayLayer = 0;
+			info.subresourceRange.layerCount = 1;
+
+			if (vkCreateImageView (device, &info, nullptr, &swapchain_image_views[i]) != VK_SUCCESS)
+				throw std::runtime_error ("failed to create image views!");
+		}
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -564,6 +591,7 @@ private:
 		pick_physical_device ();
 		create_logical_device ();
 		create_swap_chain ();
+		create_image_views ();
 	}
 
 	void main ()
@@ -576,6 +604,9 @@ private:
 
 	void cleanup ()
 	{
+		for (auto v : swapchain_image_views)
+			vkDestroyImageView (device, v, nullptr);
+
 		vkDestroySwapchainKHR (device, swap_chain, nullptr);
 		vkDestroyDevice (device, nullptr);
 
