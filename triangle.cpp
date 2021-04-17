@@ -173,8 +173,11 @@ private:
 	std::vector<VkFramebuffer> swapchain_framebufs;
 	VkCommandPool cmdpool;
 	std::vector<VkCommandBuffer> cmdbuffers;
-	VkSemaphore img_available;
-	VkSemaphore render_finished;
+	std::vector<VkSemaphore> img_available;
+	std::vector<VkSemaphore> render_finished;
+	std::vector<VkFence> in_flight_fences;
+	std::vector<VkFence> images_in_flight;
+	size_t current_frame = 0;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -703,7 +706,8 @@ private:
 			VK_COLOR_COMPONENT_G_BIT |
 			VK_COLOR_COMPONENT_B_BIT |
 			VK_COLOR_COMPONENT_A_BIT;
-		blend_att.blendEnable = VK_TRUE;
+		blend_att.blendEnable = VK_FALSE;
+
 		blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 		blend_att.colorBlendOp = VK_BLEND_OP_ADD;
@@ -713,7 +717,7 @@ private:
 
 		VkPipelineColorBlendStateCreateInfo blend {};
 		blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-		blend.logicOpEnable = VK_TRUE;
+		blend.logicOpEnable = VK_FALSE;
 		blend.logicOp = VK_LOGIC_OP_COPY; // optional
 		blend.attachmentCount = 1;
 		blend.pAttachments = &blend_att;
@@ -754,7 +758,7 @@ private:
 		pipeinfo.pMultisampleState = &multisampling;
 		pipeinfo.pDepthStencilState = nullptr; // optional
 		pipeinfo.pColorBlendState = &blend;
-		pipeinfo.pDynamicState = &dynstate; // optional
+		pipeinfo.pDynamicState = nullptr; // optional
 		pipeinfo.layout = pipeline_layout;
 		pipeinfo.renderPass = render_pass;
 		pipeinfo.subpass = 0;
@@ -840,8 +844,8 @@ private:
 
 		VkCommandPoolCreateInfo info {};
 		info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		info.queueFamilyIndex = idx.gfx_family.value();
-		info.flags = 0; // optional
+		info.queueFamilyIndex = idx.gfx_family.value ();
+		//info.flags = 0; // optional
 
 		if (vkCreateCommandPool (device, &info, nullptr, &cmdpool) != VK_SUCCESS)
 			throw std::runtime_error ("failed to create command pool!");
@@ -864,8 +868,8 @@ private:
 		{
 			VkCommandBufferBeginInfo info {};
 			info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			info.flags = 0; // optional
-			info.pInheritanceInfo = nullptr; // optional
+			//info.flags = 0; // optional
+			//info.pInheritanceInfo = nullptr; // optional
 
 			if (vkBeginCommandBuffer (cmdbuffers[i], &info) != VK_SUCCESS)
 				throw std::runtime_error ("failed to begin recording command buffer!");
@@ -891,17 +895,28 @@ private:
 		}
 	}
 
-	void create_semaphores ()
+	void create_sync ()
 	{
-		VkSemaphoreCreateInfo info {};
-		info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		img_available.resize (MAX_FRAMES_IN_FLIGHT);
+		render_finished.resize (MAX_FRAMES_IN_FLIGHT);
+		in_flight_fences.resize (MAX_FRAMES_IN_FLIGHT);
+		images_in_flight.resize (swapchain_images.size (), VK_NULL_HANDLE);
 
-		if
-		(
-			vkCreateSemaphore (device, &info, nullptr, &img_available) != VK_SUCCESS ||
-			vkCreateSemaphore (device, &info, nullptr, &render_finished) != VK_SUCCESS
-		)
-			throw std::runtime_error ("failed to create semaphores!");
+		VkSemaphoreCreateInfo semaphore_info {};
+		semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		VkFenceCreateInfo fence_info {};
+		fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i ++)
+			if
+			(
+				vkCreateSemaphore (device, &semaphore_info, nullptr, &img_available[i]) != VK_SUCCESS ||
+				vkCreateSemaphore (device, &semaphore_info, nullptr, &render_finished[i]) != VK_SUCCESS ||
+				vkCreateFence (device, &fence_info, nullptr, &in_flight_fences[i]) != VK_SUCCESS
+			)
+				throw std::runtime_error ("failed to create semaphores!");
 
 	}
 
@@ -919,17 +934,32 @@ private:
 		create_framebuffers ();
 		create_cmd_pool ();
 		create_cmd_buffers ();
-		create_semaphores ();
+		create_sync ();
 	}
 
 	void draw ()
 	{
+		vkWaitForFences (device, 1, &in_flight_fences[current_frame], VK_TRUE, UINT64_MAX);
+
 		uint32_t img_idx;
+		vkAcquireNextImageKHR (
+			device,
+			swap_chain,
+			UINT64_MAX,
+			img_available[current_frame],
+			VK_NULL_HANDLE,
+			&img_idx
+		);
 
-		vkAcquireNextImageKHR (device, swap_chain, UINT64_MAX, img_available, VK_NULL_HANDLE, &img_idx);
+		// check if a previous frame is using this image (i.e. there is its fence to wait on)
+		if (images_in_flight [img_idx] != VK_NULL_HANDLE)
+			vkWaitForFences (device, 1, &images_in_flight[img_idx], VK_TRUE, UINT64_MAX);
 
-		VkSemaphore wait_semaphores[] = { img_available };
-		VkSemaphore sig_semaphores[] = { render_finished };
+		// mark the image as now being in use by this frame
+		images_in_flight[img_idx] = in_flight_fences[current_frame];
+
+		VkSemaphore wait_semaphores[] = { img_available[current_frame] };
+		VkSemaphore sig_semaphores[] = { render_finished[current_frame] };
 
 		VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
@@ -943,7 +973,9 @@ private:
 		submit_info.signalSemaphoreCount = 1;
 		submit_info.pSignalSemaphores = sig_semaphores;
 
-		if (vkQueueSubmit (gfx_queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+		vkResetFences (device, 1, &in_flight_fences[current_frame]);
+
+		if (vkQueueSubmit (gfx_queue, 1, &submit_info, in_flight_fences[current_frame]) != VK_SUCCESS)
 			throw std::runtime_error ("failed to submit draw command buffer!");
 
 		VkSwapchainKHR swapchains[] = { swap_chain };
@@ -959,7 +991,7 @@ private:
 
 		vkQueuePresentKHR (present_queue, &present_info);
 
-		vkQueueWaitIdle (present_queue);
+		current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
 
 	void main ()
@@ -975,8 +1007,12 @@ private:
 
 	void cleanup ()
 	{
-		vkDestroySemaphore (device, render_finished, nullptr);
-		vkDestroySemaphore (device, img_available, nullptr);
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i ++)
+		{
+			vkDestroySemaphore (device, render_finished[i], nullptr);
+			vkDestroySemaphore (device, img_available[i], nullptr);
+			vkDestroyFence (device, in_flight_fences[i], nullptr);
+		}
 
 		vkDestroyCommandPool (device, cmdpool, nullptr);
 
