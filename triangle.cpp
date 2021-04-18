@@ -178,6 +178,7 @@ private:
 	std::vector<VkFence> in_flight_fences;
 	std::vector<VkFence> images_in_flight;
 	size_t current_frame = 0;
+	bool framebuf_resized = false;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -191,12 +192,20 @@ private:
 		return VK_FALSE;
 	}
 
+	static void framebuf_resize_cb (GLFWwindow *win, int w, int h)
+	{
+		auto app = reinterpret_cast<HelloTriangleApplication*> (glfwGetWindowUserPointer (win));
+		app->framebuf_resized = true;
+	}
+
 	void init_window ()
 	{
 		glfwInit ();
 		glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 		win = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+		glfwSetWindowUserPointer (win, this);
+		glfwSetFramebufferSizeCallback (win, framebuf_resize_cb);
 	}
 
 	void populate_debug_messenger_info (VkDebugUtilsMessengerCreateInfoEXT& info)
@@ -528,7 +537,7 @@ private:
 			throw std::runtime_error ("failed to create window surface!");
 	}
 
-	void create_swap_chain ()
+	void create_swapchain ()
 	{
 		SwapChainSupportDetails sup = query_swap_chain_support (physical_device);
 
@@ -583,6 +592,47 @@ private:
 
 		swapchain_img_fmt = fmt.format;
 		swapchain_ext = ext;
+	}
+
+	void cleanup_swapchain ()
+	{
+		for (auto buf : swapchain_framebufs)
+			vkDestroyFramebuffer (device, buf, nullptr);
+
+		vkFreeCommandBuffers (device, cmdpool, static_cast<uint32_t> (cmdbuffers.size ()), cmdbuffers.data ());
+
+		vkDestroyPipeline (device, pipeline, nullptr);
+		vkDestroyPipelineLayout (device, pipeline_layout, nullptr);
+		vkDestroyRenderPass (device, render_pass, nullptr);
+
+		for (auto v : swapchain_image_views)
+			vkDestroyImageView (device, v, nullptr);
+
+		vkDestroySwapchainKHR (device, swap_chain, nullptr);
+	}
+
+	void recreate_swapchain ()
+	{
+		// wait until the window is a size other than 0
+
+		int w = 0, h = 0;
+		glfwGetFramebufferSize (win, &w, &h);
+		while (w == 0 || h == 0)
+		{
+			glfwGetFramebufferSize (win, &w, &h);
+			glfwWaitEvents ();
+		}
+
+		vkDeviceWaitIdle (device);
+
+		cleanup_swapchain ();
+
+		create_swapchain ();
+		create_image_views ();
+		create_render_pass ();
+		create_gfx_pipeline ();
+		create_framebuffers ();
+		create_cmd_buffers ();
 	}
 
 	void create_image_views ()
@@ -927,7 +977,7 @@ private:
 		create_surface ();
 		pick_physical_device ();
 		create_logical_device ();
-		create_swap_chain ();
+		create_swapchain ();
 		create_image_views ();
 		create_render_pass ();
 		create_gfx_pipeline ();
@@ -942,7 +992,7 @@ private:
 		vkWaitForFences (device, 1, &in_flight_fences[current_frame], VK_TRUE, UINT64_MAX);
 
 		uint32_t img_idx;
-		vkAcquireNextImageKHR (
+		VkResult res = vkAcquireNextImageKHR (
 			device,
 			swap_chain,
 			UINT64_MAX,
@@ -950,6 +1000,14 @@ private:
 			VK_NULL_HANDLE,
 			&img_idx
 		);
+
+		if (res == VK_ERROR_OUT_OF_DATE_KHR)
+		{
+			recreate_swapchain ();
+			return;
+		}
+		else if (res != VK_SUCCESS && res != VK_SUBOPTIMAL_KHR)
+			throw std::runtime_error ("failed to acquire swap chain image!");
 
 		// check if a previous frame is using this image (i.e. there is its fence to wait on)
 		if (images_in_flight [img_idx] != VK_NULL_HANDLE)
@@ -989,7 +1047,14 @@ private:
 		present_info.pImageIndices = &img_idx;
 		present_info.pResults = nullptr; // optional
 
-		vkQueuePresentKHR (present_queue, &present_info);
+		res = vkQueuePresentKHR (present_queue, &present_info);
+		if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR || framebuf_resized)
+		{
+			framebuf_resized = false;
+			recreate_swapchain ();
+		}
+		else if (res != VK_SUCCESS)
+			throw std::runtime_error ("failed to present swap chain image!");
 
 		current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
@@ -1007,6 +1072,8 @@ private:
 
 	void cleanup ()
 	{
+		cleanup_swapchain ();
+
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i ++)
 		{
 			vkDestroySemaphore (device, render_finished[i], nullptr);
@@ -1015,18 +1082,6 @@ private:
 		}
 
 		vkDestroyCommandPool (device, cmdpool, nullptr);
-
-		for (auto buf : swapchain_framebufs)
-			vkDestroyFramebuffer (device, buf, nullptr);
-
-		vkDestroyPipeline (device, pipeline, nullptr);
-		vkDestroyPipelineLayout (device, pipeline_layout, nullptr);
-		vkDestroyRenderPass (device, render_pass, nullptr);
-
-		for (auto v : swapchain_image_views)
-			vkDestroyImageView (device, v, nullptr);
-
-		vkDestroySwapchainKHR (device, swap_chain, nullptr);
 		vkDestroyDevice (device, nullptr);
 
 		if (enable_validation_layers)
