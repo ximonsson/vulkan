@@ -9,9 +9,51 @@
 #include <optional>
 #include <set>
 #include <fstream>
+#include <glm/glm.hpp>
+#include <array>
 
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
+
+struct Vertex
+{
+	glm::vec2 pos;
+	glm::vec3 color;
+
+	static VkVertexInputBindingDescription get_binding_desc ()
+	{
+		VkVertexInputBindingDescription desc {};
+		desc.binding = 0;
+		desc.stride = sizeof (Vertex);
+		desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+		return desc;
+	}
+
+	static std::array<VkVertexInputAttributeDescription, 2> get_attrib_desc ()
+	{
+		std::array<VkVertexInputAttributeDescription, 2> desc;
+
+		desc[0].binding = 0;
+		desc[0].location = 0;
+		desc[0].format = VK_FORMAT_R32G32_SFLOAT;
+		desc[0].offset = offsetof (Vertex, pos);
+
+		desc[1].binding = 1;
+		desc[1].location = 1;
+		desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		desc[1].offset = offsetof (Vertex, color);
+
+		return desc;
+	}
+};
+
+const std::vector<Vertex> vertices =
+{
+	{ { 0.0f, -0.5f },  { 1.0f,  0.0f, 0.0f } },
+	{ { 0.5f, 0.5f },  { 0.0f,  1.0f, 0.0f } },
+	{ { -0.5f, 0.5f },  { 0.0f,  0.0f, 1.0f } }
+};
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -179,6 +221,8 @@ private:
 	std::vector<VkFence> images_in_flight;
 	size_t current_frame = 0;
 	bool framebuf_resized = false;
+	VkBuffer vx_buf;
+	VkDeviceMemory vx_buf_mem;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -661,6 +705,79 @@ private:
 		}
 	}
 
+	uint32_t find_mem_type (uint32_t type_filter, VkMemoryPropertyFlags props)
+	{
+		VkPhysicalDeviceMemoryProperties mem_props;
+		vkGetPhysicalDeviceMemoryProperties (physical_device, &mem_props);
+
+		for (uint32_t i = 0; i < mem_props.memoryTypeCount; i ++)
+		{
+			if
+			(
+				(type_filter & (1 << i)) &&
+				(mem_props.memoryTypes[i].propertyFlags & props) == props
+			)
+				return i;
+		}
+
+		throw std::runtime_error ("failed to find suitable memory type!");
+	}
+
+	void create_buffer
+	(
+		VkDeviceSize size,
+		VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags props,
+		VkBuffer &buf,
+		VkDeviceMemory &mem
+	)
+	{
+		VkBufferCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		info.size = size;
+		info.usage = usage;
+		info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (vkCreateBuffer (device, &info, nullptr, &buf) != VK_SUCCESS)
+			throw std::runtime_error ("failed to create vertex buffer!");
+
+		VkMemoryRequirements mem_req;
+		vkGetBufferMemoryRequirements (device, buf, &mem_req);
+
+		VkMemoryAllocateInfo alloc_info {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		alloc_info.allocationSize = mem_req.size;
+		alloc_info.memoryTypeIndex = find_mem_type
+		(
+			mem_req.memoryTypeBits,
+			props
+		);
+
+		if (vkAllocateMemory (device, &alloc_info, nullptr, &mem) != VK_SUCCESS)
+			throw std::runtime_error ("failed to allocate vertex buffer memory!");
+
+		vkBindBufferMemory (device, buf, mem, 0);
+	}
+
+	void create_vx_buf ()
+	{
+		VkDeviceSize size = sizeof (vertices[0]) * vertices.size ();
+
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			vx_buf,
+			vx_buf_mem
+		);
+
+		void *data;
+		vkMapMemory (device, vx_buf_mem, 0, size, 0, &data);
+		memcpy (data, vertices.data (), (size_t) size);
+		vkUnmapMemory (device, vx_buf_mem);
+	}
+
 	VkShaderModule create_shader_module (const std::vector<char>& code)
 	{
 		VkShaderModuleCreateInfo info {};
@@ -697,12 +814,15 @@ private:
 
 		VkPipelineShaderStageCreateInfo stages[] = { vxinfo, fginfo };
 
+		auto binding_desc = Vertex::get_binding_desc ();
+		auto attrib_desc = Vertex::get_attrib_desc ();
+
 		VkPipelineVertexInputStateCreateInfo vxinput {};
 		vxinput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vxinput.vertexBindingDescriptionCount = 0;
-		vxinput.pVertexBindingDescriptions = nullptr; // optional
-		vxinput.vertexAttributeDescriptionCount = 0;
-		vxinput.pVertexAttributeDescriptions = nullptr; // optional
+		vxinput.vertexBindingDescriptionCount = 1;
+		vxinput.pVertexBindingDescriptions = &binding_desc; // optional
+		vxinput.vertexAttributeDescriptionCount = static_cast<uint32_t> (attrib_desc.size());
+		vxinput.pVertexAttributeDescriptions = attrib_desc.data (); // optional
 
 		VkPipelineInputAssemblyStateCreateInfo inasm {};
 		inasm.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -937,7 +1057,12 @@ private:
 
 			vkCmdBeginRenderPass (cmdbuffers[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline (cmdbuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-			vkCmdDraw (cmdbuffers[i], 3, 1, 0, 0);
+
+			VkBuffer vx_bufs[] = { vx_buf };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers (cmdbuffers[i], 0, 1, vx_bufs, offsets);
+
+			vkCmdDraw (cmdbuffers[i], static_cast<uint32_t> (vertices.size ()), 1, 0, 0);
 			vkCmdEndRenderPass (cmdbuffers[i]);
 
 			if (vkEndCommandBuffer (cmdbuffers[i]) != VK_SUCCESS)
@@ -983,6 +1108,7 @@ private:
 		create_gfx_pipeline ();
 		create_framebuffers ();
 		create_cmd_pool ();
+		create_vx_buf ();
 		create_cmd_buffers ();
 		create_sync ();
 	}
@@ -1073,6 +1199,9 @@ private:
 	void cleanup ()
 	{
 		cleanup_swapchain ();
+
+		vkDestroyBuffer (device, vx_buf, nullptr);
+		vkFreeMemory (device, vx_buf_mem, nullptr);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i ++)
 		{
