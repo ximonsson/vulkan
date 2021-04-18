@@ -39,7 +39,7 @@ struct Vertex
 		desc[0].format = VK_FORMAT_R32G32_SFLOAT;
 		desc[0].offset = offsetof (Vertex, pos);
 
-		desc[1].binding = 1;
+		desc[1].binding = 0;
 		desc[1].location = 1;
 		desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 		desc[1].offset = offsetof (Vertex, color);
@@ -50,9 +50,9 @@ struct Vertex
 
 const std::vector<Vertex> vertices =
 {
-	{ { 0.0f, -0.5f },  { 1.0f,  0.0f, 0.0f } },
-	{ { 0.5f, 0.5f },  { 0.0f,  1.0f, 0.0f } },
-	{ { -0.5f, 0.5f },  { 0.0f,  0.0f, 1.0f } }
+	{ { 0.0f, -0.5f }, { 1.0f,  0.0f, 0.0f } },
+	{ { 0.5f, 0.5f }, { 0.0f,  1.0f, 0.0f } },
+	{ { -0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f } }
 };
 
 const uint32_t WIDTH = 800;
