@@ -50,10 +50,13 @@ struct Vertex
 
 const std::vector<Vertex> vertices =
 {
-	{ { 0.0f, -0.5f }, { 1.0f,  0.0f, 0.0f } },
-	{ { 0.5f, 0.5f }, { 0.0f,  1.0f, 0.0f } },
-	{ { -0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f } }
+	{ { -0.5f, -0.5f }, { 1.0f,  0.0f, 0.0f } },
+	{ { 0.5f, -0.5f }, { 0.0f,  1.0f, 0.0f } },
+	{ { 0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f } },
+	{ { -0.5f, 0.5f }, { 1.0f,  1.0f, 1.0f } }
 };
+
+const std::vector<uint16_t> indices = { 0, 1, 2, 2, 3, 0 };
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -223,6 +226,8 @@ private:
 	bool framebuf_resized = false;
 	VkBuffer vx_buf;
 	VkDeviceMemory vx_buf_mem;
+	VkBuffer idx_buf;
+	VkDeviceMemory idx_buf_mem;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -763,19 +768,106 @@ private:
 	{
 		VkDeviceSize size = sizeof (vertices[0]) * vertices.size ();
 
+		VkBuffer staging_buf;
+		VkDeviceMemory staging_buf_mem;
 		create_buffer
 		(
 			size,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			staging_buf,
+			staging_buf_mem
+		);
+
+		void *data;
+		vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+		memcpy (data, vertices.data (), (size_t) size);
+		vkUnmapMemory (device, staging_buf_mem);
+
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			vx_buf,
 			vx_buf_mem
 		);
 
+		copy_buf (staging_buf, vx_buf, size);
+
+		vkDestroyBuffer (device, staging_buf, nullptr);
+		vkFreeMemory (device, staging_buf_mem, nullptr);
+	}
+
+	void create_idx_buf ()
+	{
+		VkDeviceSize size = sizeof (indices[0]) * indices.size ();
+
+		VkBuffer staging_buf;
+		VkDeviceMemory staging_buf_mem;
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			staging_buf,
+			staging_buf_mem
+		);
+
 		void *data;
-		vkMapMemory (device, vx_buf_mem, 0, size, 0, &data);
-		memcpy (data, vertices.data (), (size_t) size);
-		vkUnmapMemory (device, vx_buf_mem);
+		vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+		memcpy (data, indices.data (), (size_t) size);
+		vkUnmapMemory (device, staging_buf_mem);
+
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			idx_buf,
+			idx_buf_mem
+		);
+
+		copy_buf (staging_buf, idx_buf, size);
+
+		vkDestroyBuffer (device, staging_buf, nullptr);
+		vkFreeMemory (device, staging_buf_mem, nullptr);
+	}
+
+	void copy_buf (VkBuffer src, VkBuffer dst, VkDeviceSize size)
+	{
+		VkCommandBufferAllocateInfo alloc_info {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		alloc_info.commandPool = cmdpool;
+		alloc_info.commandBufferCount = 1;
+
+		VkCommandBuffer cmd_buf;
+		vkAllocateCommandBuffers (device, &alloc_info, &cmd_buf);
+
+		VkCommandBufferBeginInfo begin_info {};
+		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+		vkBeginCommandBuffer (cmd_buf, &begin_info);
+
+		VkBufferCopy copy {};
+		copy.srcOffset = 0; // optional
+		copy.dstOffset = 0; // optional
+		copy.size = size;
+		vkCmdCopyBuffer (cmd_buf, src, dst, 1, &copy);
+
+		vkEndCommandBuffer (cmd_buf);
+
+		VkSubmitInfo submit_info {};
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.commandBufferCount = 1;
+		submit_info.pCommandBuffers = &cmd_buf;
+
+		vkQueueSubmit (gfx_queue, 1, &submit_info, VK_NULL_HANDLE);
+		vkQueueWaitIdle (gfx_queue);
+
+		vkFreeCommandBuffers (device, cmdpool, 1, &cmd_buf);
 	}
 
 	VkShaderModule create_shader_module (const std::vector<char>& code)
@@ -1062,7 +1154,9 @@ private:
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers (cmdbuffers[i], 0, 1, vx_bufs, offsets);
 
-			vkCmdDraw (cmdbuffers[i], static_cast<uint32_t> (vertices.size ()), 1, 0, 0);
+			vkCmdBindIndexBuffer (cmdbuffers[i], idx_buf, 0, VK_INDEX_TYPE_UINT16);
+
+			vkCmdDrawIndexed (cmdbuffers[i], static_cast<uint32_t> (indices.size ()), 1, 0, 0, 0);
 			vkCmdEndRenderPass (cmdbuffers[i]);
 
 			if (vkEndCommandBuffer (cmdbuffers[i]) != VK_SUCCESS)
@@ -1109,6 +1203,7 @@ private:
 		create_framebuffers ();
 		create_cmd_pool ();
 		create_vx_buf ();
+		create_idx_buf ();
 		create_cmd_buffers ();
 		create_sync ();
 	}
@@ -1202,6 +1297,9 @@ private:
 
 		vkDestroyBuffer (device, vx_buf, nullptr);
 		vkFreeMemory (device, vx_buf_mem, nullptr);
+
+		vkDestroyBuffer (device, idx_buf, nullptr);
+		vkFreeMemory (device, idx_buf_mem, nullptr);
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i ++)
 		{
