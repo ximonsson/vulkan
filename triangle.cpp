@@ -50,7 +50,7 @@ struct Vertex
 
 const std::vector<Vertex> vertices =
 {
-	{ { 0.0f, -0.5f }, { 1.0f,  0.0f, 0.0f } },
+	{ { 0.0f, -0.5f }, { 1.0f,  1.0f, 1.0f } },
 	{ { 0.5f, 0.5f }, { 0.0f,  1.0f, 0.0f } },
 	{ { -0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f } }
 };
@@ -222,7 +222,9 @@ private:
 	size_t current_frame = 0;
 	bool framebuf_resized = false;
 	VkBuffer vx_buf;
+	VkBuffer staging_buf;
 	VkDeviceMemory vx_buf_mem;
+	VkDeviceMemory staging_buf_mem;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -759,23 +761,75 @@ private:
 		vkBindBufferMemory (device, buf, mem, 0);
 	}
 
+	void copy_buf (VkBuffer src, VkBuffer dst, VkDeviceSize size)
+	{
+		VkCommandBufferAllocateInfo alloc_info {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		alloc_info.commandPool = cmdpool;
+		alloc_info.commandBufferCount = 1;
+
+		VkCommandBuffer cmd_buf;
+		vkAllocateCommandBuffers (device, &alloc_info, &cmd_buf);
+
+		VkCommandBufferBeginInfo begin_info {};
+		begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+		vkBeginCommandBuffer (cmd_buf, &begin_info);
+
+		VkBufferCopy cp_region {};
+		cp_region.srcOffset = 0;
+		cp_region.dstOffset = 0;
+		cp_region.size = size;
+		vkCmdCopyBuffer (cmd_buf, src, dst, 1, &cp_region);
+
+		vkEndCommandBuffer (cmd_buf);
+
+		VkSubmitInfo submit_info {};
+		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submit_info.commandBufferCount = 1;
+		submit_info.pCommandBuffers = &cmd_buf;
+
+		vkQueueSubmit (gfx_queue, 1, &submit_info, VK_NULL_HANDLE);
+		vkQueueWaitIdle (gfx_queue);
+
+		vkFreeCommandBuffers (device, cmdpool, 1, &cmd_buf);
+	}
+
 	void create_vx_buf ()
 	{
 		VkDeviceSize size = sizeof (vertices[0]) * vertices.size ();
 
+		VkBuffer staging_buf;
+		VkDeviceMemory staging_buf_mem;
+
 		create_buffer
 		(
 			size,
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			staging_buf,
+			staging_buf_mem
+		);
+
+		void *data;
+		vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+		memcpy (data, vertices.data (), (size_t) size);
+		vkUnmapMemory (device, staging_buf_mem);
+
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			vx_buf,
 			vx_buf_mem
 		);
 
-		void *data;
-		vkMapMemory (device, vx_buf_mem, 0, size, 0, &data);
-		memcpy (data, vertices.data (), (size_t) size);
-		vkUnmapMemory (device, vx_buf_mem);
+		copy_buf (staging_buf, vx_buf, size);
+
+		vkDestroyBuffer (device, staging_buf, nullptr);
+		vkFreeMemory (device, staging_buf_mem, nullptr);
 	}
 
 	VkShaderModule create_shader_module (const std::vector<char>& code)
