@@ -238,6 +238,7 @@ private:
 	size_t current_frame = 0;
 	bool framebuf_resized = false;
 	VkBuffer vx_buf;
+	VkBuffer staging_buf;
 	VkDeviceMemory vx_buf_mem;
 	VkBuffer idx_buf;
 	VkDeviceMemory idx_buf_mem;
