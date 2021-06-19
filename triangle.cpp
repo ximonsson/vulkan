@@ -18,6 +18,8 @@
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 
 struct UniformBufferObject
@@ -246,6 +248,8 @@ private:
 	std::vector<VkDeviceMemory> unif_buf_mem;
 	VkDescriptorPool descriptor_pool;
 	std::vector<VkDescriptorSet> descriptor_sets;
+	VkImage tex_img;
+	VkDeviceMemory tex_img_mem;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -863,7 +867,7 @@ private:
 		vkFreeMemory (device, staging_buf_mem, nullptr);
 	}
 
-	void copy_buf (VkBuffer src, VkBuffer dst, VkDeviceSize size)
+	VkCommandBuffer begin_single_time_cmds ()
 	{
 		VkCommandBufferAllocateInfo alloc_info {};
 		alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -880,23 +884,35 @@ private:
 
 		vkBeginCommandBuffer (cmd_buf, &begin_info);
 
-		VkBufferCopy copy {};
-		copy.srcOffset = 0; // optional
-		copy.dstOffset = 0; // optional
-		copy.size = size;
-		vkCmdCopyBuffer (cmd_buf, src, dst, 1, &copy);
+		return cmd_buf;
+	}
 
-		vkEndCommandBuffer (cmd_buf);
+	void end_single_time_cmds (VkCommandBuffer cmdbuf)
+	{
+		vkEndCommandBuffer (cmdbuf);
 
 		VkSubmitInfo submit_info {};
 		submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submit_info.commandBufferCount = 1;
-		submit_info.pCommandBuffers = &cmd_buf;
+		submit_info.pCommandBuffers = &cmdbuf;
 
 		vkQueueSubmit (gfx_queue, 1, &submit_info, VK_NULL_HANDLE);
 		vkQueueWaitIdle (gfx_queue);
 
-		vkFreeCommandBuffers (device, cmdpool, 1, &cmd_buf);
+		vkFreeCommandBuffers (device, cmdpool, 1, &cmdbuf);
+	}
+
+	void copy_buf (VkBuffer src, VkBuffer dst, VkDeviceSize size)
+	{
+		VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+		VkBufferCopy copy {};
+		copy.srcOffset = 0; // optional
+		copy.dstOffset = 0; // optional
+		copy.size = size;
+		vkCmdCopyBuffer (cmdbuf, src, dst, 1, &copy);
+
+		end_single_time_cmds (cmdbuf);
 	}
 
 	VkShaderModule create_shader_module (const std::vector<char>& code)
@@ -1317,6 +1333,103 @@ private:
 		}
 	}
 
+	void create_img
+	(
+		uint32_t w,
+		uint32_t h,
+		VkFormat fmt,
+		VkImageTiling tiling,
+		VkImageUsageFlags usage,
+		VkMemoryPropertyFlags props,
+		VkImage& img,
+		VkDeviceMemory& img_mem
+	)
+	{
+		VkImageCreateInfo img_info {};
+		img_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		img_info.imageType = VK_IMAGE_TYPE_2D;
+		img_info.extent.width = w;
+		img_info.extent.height = h;
+		img_info.extent.depth = 1;
+		img_info.mipLevels = 1;
+		img_info.arrayLayers = 1;
+		img_info.format = fmt;
+		img_info.tiling = tiling;
+		img_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		img_info.usage = usage;
+		img_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		img_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (vkCreateImage (device, &img_info, nullptr, &img) != VK_SUCCESS)
+			throw std::runtime_error ("failed to create image!");
+
+		VkMemoryRequirements memreq;
+		vkGetImageMemoryRequirements (device, img, &memreq);
+
+		VkMemoryAllocateInfo alloc_info {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		alloc_info.allocationSize = memreq.size;
+		alloc_info.memoryTypeIndex = find_mem_type (memreq.memoryTypeBits, props);
+
+		if (vkAllocateMemory (device, &alloc_info, nullptr, &img_mem) != VK_SUCCESS)
+			throw std::runtime_error ("failed to allocate image memory");
+	}
+
+	void create_texture_img ()
+	{
+		int w, h, c;
+
+		stbi_uc *pix = stbi_load ("textures/texture.jpg", &w, &h, &c, STBI_rgb_alpha);
+		VkDeviceSize size = w * h * 4;
+
+		if (!pix)
+			throw std::runtime_error ("failed to load texture image!");
+
+		VkBuffer staging_buf;
+		VkDeviceMemory staging_buf_mem;
+
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			staging_buf,
+			staging_buf_mem
+		);
+
+		void *data;
+		vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+		memcpy (data, pix, static_cast<size_t> (size));
+		vkUnmapMemory (device, staging_buf_mem);
+
+		stbi_image_free (pix);
+
+		create_img
+		(
+			w,
+			h,
+			VK_FORMAT_R8G8B8A8_SRGB,
+			VK_IMAGE_TILING_OPTIMAL,
+			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+			tex_img,
+			tex_img_mem
+		);
+	}
+
+	void transition_img_layout
+	(
+		VkImage img,
+		VkFormat fmt,
+		VkImageLayout old_layout,
+		VkImageLayout new_layout
+	)
+	{
+		VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+		end_single_time_cmds (cmdbuf);
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -1331,6 +1444,7 @@ private:
 		create_gfx_pipeline ();
 		create_framebuffers ();
 		create_cmd_pool ();
+		create_texture_img ();
 		create_vx_buf ();
 		create_idx_buf ();
 		create_uniform_buf ();

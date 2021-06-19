@@ -1,4 +1,4 @@
-CFLAGS = -std=c++17 -O2 -DNDEBUG=1
+CFLAGS = -std=c++17 -O2 -DNDEBUG=1 -I../stb
 LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
 GLSL = glslangValidator
 
