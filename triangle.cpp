@@ -1415,6 +1415,56 @@ private:
 			tex_img,
 			tex_img_mem
 		);
+
+		transition_img_layout
+		(
+			tex_img,
+			VK_FORMAT_R8G8B8A8_SRGB,
+			VK_IMAGE_LAYOUT_UNDEFINED,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+		);
+
+		cp_buf_img
+		(
+			staging_buf,
+			tex_img,
+			static_cast<uint32_t> (w),
+			static_cast<uint32_t> (h)
+		);
+
+		transition_img_layout
+		(
+			tex_img,
+			VK_FORMAT_R8G8B8A8_SRGB,
+			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		);
+
+		vkDestroyBuffer (device, staging_buf, nullptr);
+		vkFreeMemory (device, staging_buf_mem, nullptr);
+	}
+
+	void cp_buf_img (VkBuffer buf, VkImage img, uint32_t w, uint32_t h)
+	{
+		VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+		VkBufferImageCopy region {};
+
+		region.bufferOffset = 0;
+		region.bufferRowLength = 0;
+		region.bufferImageHeight = 0;
+
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+
+		region.imageOffset = { 0, 0, 0 };
+		region.imageExtent = { w, h, 1 };
+
+		vkCmdCopyBufferToImage (cmdbuf, buf, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+		end_single_time_cmds (cmdbuf);
 	}
 
 	void transition_img_layout
@@ -1426,6 +1476,56 @@ private:
 	)
 	{
 		VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+		VkImageMemoryBarrier barrier {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = old_layout;
+		barrier.newLayout = new_layout;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = img;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.srcAccessMask = 0; // TODO
+		barrier.dstAccessMask = 0; // TODO
+
+		VkPipelineStageFlags src_stage;
+		VkPipelineStageFlags dst_stage;
+
+		if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+		{
+			barrier.srcAccessMask = 0;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+			dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		}
+		else if
+		(
+			old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+			new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+		)
+		{
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		}
+
+		vkCmdPipelineBarrier (
+			cmdbuf,
+			src_stage,
+			dst_stage,
+			0,
+			0,
+			nullptr,
+			0,
+			nullptr,
+			1,
+			&barrier
+		);
 
 		end_single_time_cmds (cmdbuf);
 	}
@@ -1573,6 +1673,9 @@ private:
 	void cleanup ()
 	{
 		cleanup_swapchain ();
+
+		vkDestroyImage (device, tex_img, nullptr);
+		vkFreeMemory (device, tex_img_mem, nullptr);
 
 		vkDestroyDescriptorSetLayout (device, descriptor_set_layout, nullptr);
 
