@@ -250,6 +250,7 @@ private:
 	std::vector<VkDescriptorSet> descriptor_sets;
 	VkImage tex_img;
 	VkDeviceMemory tex_img_mem;
+	VkImageView tex_img_view;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -1530,6 +1531,14 @@ private:
 		end_single_time_cmds (cmdbuf);
 	}
 
+	void create_tex_img_view ()
+	{
+		VkImageViewCreateInfo vinfo {};
+		vinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		vinfo.image = tex_img;
+		vinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -1545,6 +1554,7 @@ private:
 		create_framebuffers ();
 		create_cmd_pool ();
 		create_texture_img ();
+		create_tex_img_view ();
 		create_vx_buf ();
 		create_idx_buf ();
 		create_uniform_buf ();
