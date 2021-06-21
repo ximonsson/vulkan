@@ -1537,6 +1537,12 @@ private:
 		vinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		vinfo.image = tex_img;
 		vinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		vinfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+		vinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		vinfo.subresourceRange.baseMipLevel = 0;
+		vinfo.subresourceRange.levelCount = 1;
+		vinfo.subresourceRange.baseArrayLayer = 0;
+		vinfo.subresourceRange.layerCount = 1;
 	}
 
 	void init_vulkan ()
