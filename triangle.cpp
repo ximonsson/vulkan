@@ -251,6 +251,7 @@ private:
 	VkImage tex_img;
 	VkDeviceMemory tex_img_mem;
 	VkImageView tex_img_view;
+	VkSampler tex_sampler;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -534,7 +535,7 @@ private:
 			swap_chain_adequate = !sup.formats.empty() && !sup.present_modes.empty();
 		}
 
-		return i.is_complete () && ext_support && swap_chain_adequate;
+		return i.is_complete () && ext_support && swap_chain_adequate && feats.samplerAnisotropy;
 	}
 
 	void pick_physical_device ()
@@ -580,6 +581,8 @@ private:
 		}
 
 		VkPhysicalDeviceFeatures feats {};
+		feats.samplerAnisotropy = VK_TRUE;
+
 		VkDeviceCreateInfo info {};
 		info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		info.pQueueCreateInfos = qinfos.data ();
@@ -691,6 +694,42 @@ private:
 		vkDestroyDescriptorPool (device, descriptor_pool, nullptr);
 	}
 
+	VkImageView create_img_view (VkImage img, VkFormat fmt)
+	{
+		VkImageViewCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		info.image = img;
+		info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		info.format = fmt;
+		info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+		info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		info.subresourceRange.baseMipLevel = 0;
+		info.subresourceRange.levelCount = 1;
+		info.subresourceRange.baseArrayLayer = 0;
+		info.subresourceRange.layerCount = 1;
+
+		VkImageView view;
+		if (vkCreateImageView (device, &info, nullptr, &view) != VK_SUCCESS)
+		{
+			throw std::runtime_error ("failed to create image views!");
+		}
+
+		return view;
+	}
+
+	void create_img_views ()
+	{
+		swapchain_image_views.resize (swapchain_images.size ());
+
+		for (size_t i = 0; i < swapchain_images.size (); i ++)
+		{
+			swapchain_image_views[i] = create_img_view (swapchain_images[i], swapchain_img_fmt);
+		}
+	}
+
 	void recreate_swapchain ()
 	{
 		// wait until the window is a size other than 0
@@ -708,7 +747,7 @@ private:
 		cleanup_swapchain ();
 
 		create_swapchain ();
-		create_image_views ();
+		create_img_views ();
 		create_render_pass ();
 		create_gfx_pipeline ();
 		create_framebuffers ();
@@ -716,32 +755,6 @@ private:
 		create_descriptor_pool ();
 		create_descriptor_sets ();
 		create_cmd_buffers ();
-	}
-
-	void create_image_views ()
-	{
-		swapchain_image_views.resize (swapchain_images.size ());
-
-		for (size_t i = 0; i < swapchain_images.size (); i ++)
-		{
-			VkImageViewCreateInfo info {};
-			info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			info.image = swapchain_images[i];
-			info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			info.format = swapchain_img_fmt;
-			info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-			info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-			info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-			info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-			info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			info.subresourceRange.baseMipLevel = 0;
-			info.subresourceRange.levelCount = 1;
-			info.subresourceRange.baseArrayLayer = 0;
-			info.subresourceRange.layerCount = 1;
-
-			if (vkCreateImageView (device, &info, nullptr, &swapchain_image_views[i]) != VK_SUCCESS)
-				throw std::runtime_error ("failed to create image views!");
-		}
 	}
 
 	uint32_t find_mem_type (uint32_t type_filter, VkMemoryPropertyFlags props)
@@ -1533,16 +1546,35 @@ private:
 
 	void create_tex_img_view ()
 	{
-		VkImageViewCreateInfo vinfo {};
-		vinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		vinfo.image = tex_img;
-		vinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		vinfo.format = VK_FORMAT_R8G8B8A8_SRGB;
-		vinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		vinfo.subresourceRange.baseMipLevel = 0;
-		vinfo.subresourceRange.levelCount = 1;
-		vinfo.subresourceRange.baseArrayLayer = 0;
-		vinfo.subresourceRange.layerCount = 1;
+		tex_img_view = create_img_view (tex_img, VK_FORMAT_R8G8B8A8_SRGB);
+	}
+
+	void create_tex_sampler ()
+	{
+		VkSamplerCreateInfo info {};
+		info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		info.magFilter = VK_FILTER_LINEAR;
+		info.minFilter = VK_FILTER_LINEAR;
+		info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		info.anisotropyEnable = VK_TRUE;
+
+		VkPhysicalDeviceProperties props {};
+		vkGetPhysicalDeviceProperties (physical_device, &props);
+
+		info.maxAnisotropy = props.limits.maxSamplerAnisotropy;
+		info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		info.unnormalizedCoordinates = VK_FALSE;
+		info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		info.mipLodBias = 0.0f;
+		info.minLod = 0.0f;
+		info.maxLod = 0.0f;
+
+		if (vkCreateSampler (device, &info, nullptr, &tex_sampler) != VK_SUCCESS)
+		{
+			throw std::runtime_error ("failed to create texture sampler!");
+		}
 	}
 
 	void init_vulkan ()
@@ -1553,7 +1585,7 @@ private:
 		pick_physical_device ();
 		create_logical_device ();
 		create_swapchain ();
-		create_image_views ();
+		create_img_views ();
 		create_render_pass ();
 		create_descriptor_set_layout ();
 		create_gfx_pipeline ();
@@ -1561,6 +1593,7 @@ private:
 		create_cmd_pool ();
 		create_texture_img ();
 		create_tex_img_view ();
+		create_tex_sampler ();
 		create_vx_buf ();
 		create_idx_buf ();
 		create_uniform_buf ();
@@ -1690,6 +1723,8 @@ private:
 	{
 		cleanup_swapchain ();
 
+		vkDestroySampler (device, tex_sampler, nullptr);
+		vkDestroyImageView (device, tex_img_view, nullptr);
 		vkDestroyImage (device, tex_img, nullptr);
 		vkFreeMemory (device, tex_img_mem, nullptr);
 
