@@ -33,6 +33,7 @@ struct Vertex
 {
 	glm::vec2 pos;
 	glm::vec3 color;
+	glm::vec2 tex_coord;
 
 	static VkVertexInputBindingDescription get_binding_desc ()
 	{
@@ -44,9 +45,9 @@ struct Vertex
 		return desc;
 	}
 
-	static std::array<VkVertexInputAttributeDescription, 2> get_attrib_desc ()
+	static std::array<VkVertexInputAttributeDescription, 3> get_attrib_desc ()
 	{
-		std::array<VkVertexInputAttributeDescription, 2> desc;
+		std::array<VkVertexInputAttributeDescription, 3> desc;
 
 		desc[0].binding = 0;
 		desc[0].location = 0;
@@ -58,16 +59,21 @@ struct Vertex
 		desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 		desc[1].offset = offsetof (Vertex, color);
 
+		desc[2].binding = 0;
+		desc[2].location = 2;
+		desc[2].format = VK_FORMAT_R32G32_SFLOAT;
+		desc[2].offset = offsetof (Vertex, tex_coord);
+
 		return desc;
 	}
 };
 
 const std::vector<Vertex> vertices =
 {
-	{ { -0.5f, -0.5f }, { 1.0f,  0.0f, 0.0f } },
-	{ { 0.5f, -0.5f }, { 0.0f,  1.0f, 0.0f } },
-	{ { 0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f } },
-	{ { -0.5f, 0.5f }, { 1.0f,  1.0f, 1.0f } }
+	{ { -0.5f, -0.5f }, { 1.0f,  0.0f, 0.0f }, { 1.0f, .0f } },
+	{ { 0.5f, -0.5f }, { 0.0f,  1.0f, 0.0f }, { .0f, .0f } },
+	{ { 0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f }, { .0f, 1.0f } },
+	{ { -0.5f, 0.5f }, { 1.0f,  1.0f, 1.0f }, { 1.0f, 1.0f } }
 };
 
 const std::vector<uint16_t> indices = { 0, 1, 2, 2, 3, 0 };
@@ -1062,8 +1068,8 @@ private:
 		pipeline_cinfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipeline_cinfo.setLayoutCount = 1; // optional
 		pipeline_cinfo.pSetLayouts = &descriptor_set_layout; // optional
-		pipeline_cinfo.pushConstantRangeCount = 0; // optional
-		pipeline_cinfo.pPushConstantRanges = nullptr; // optional
+		//pipeline_cinfo.pushConstantRangeCount = 0; // optional
+		//pipeline_cinfo.pPushConstantRanges = nullptr; // optional
 
 		if (vkCreatePipelineLayout (device, &pipeline_cinfo, nullptr, &pipeline_layout) != VK_SUCCESS)
 			throw std::runtime_error ("failed to create pipeline layout!");
@@ -1268,10 +1274,21 @@ private:
 		ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		ubo_layout_binding.pImmutableSamplers = nullptr; // optional
 
+		VkDescriptorSetLayoutBinding sampler_layout_binding {};
+		sampler_layout_binding.binding = 1;
+		sampler_layout_binding.descriptorCount = 1;
+		sampler_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		sampler_layout_binding.pImmutableSamplers = nullptr;
+		sampler_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+		std::array<VkDescriptorSetLayoutBinding, 2> bindings =
+		{
+			ubo_layout_binding, sampler_layout_binding
+		};
 		VkDescriptorSetLayoutCreateInfo layout_info {};
 		layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layout_info.bindingCount = 1;
-		layout_info.pBindings = &ubo_layout_binding;
+		layout_info.bindingCount = static_cast <uint32_t> (bindings.size ());
+		layout_info.pBindings = bindings.data ();
 
 		if (vkCreateDescriptorSetLayout (device, &layout_info, nullptr, &descriptor_set_layout) != VK_SUCCESS)
 			throw std::runtime_error ("failed to create descriptor set layout!");
@@ -1297,14 +1314,16 @@ private:
 
 	void create_descriptor_pool ()
 	{
-		VkDescriptorPoolSize pool_size;
-		pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		pool_size.descriptorCount = static_cast<uint32_t> (swapchain_images.size ());
+		std::array<VkDescriptorPoolSize, 2> pool_sizes {};
+		pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		pool_sizes[0].descriptorCount = static_cast<uint32_t> (swapchain_images.size ());
+		pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		pool_sizes[1].descriptorCount = static_cast<uint32_t> (swapchain_images.size ());
 
 		VkDescriptorPoolCreateInfo pool_info {};
 		pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		pool_info.poolSizeCount = 1;
-		pool_info.pPoolSizes = &pool_size;
+		pool_info.poolSizeCount = static_cast<uint32_t> (pool_sizes.size ());
+		pool_info.pPoolSizes = pool_sizes.data ();
 		pool_info.maxSets = static_cast<uint32_t> (swapchain_images.size ());
 
 		if (vkCreateDescriptorPool (device, &pool_info, nullptr, &descriptor_pool) != VK_SUCCESS)
@@ -1332,18 +1351,37 @@ private:
 			buffer_info.offset = 0;
 			buffer_info.range = sizeof (UniformBufferObject);
 
-			VkWriteDescriptorSet write {};
-			write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			write.dstSet = descriptor_sets[i];
-			write.dstBinding = 0;
-			write.dstArrayElement = 0;
-			write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			write.descriptorCount = 1;
-			write.pBufferInfo = &buffer_info;
-			write.pImageInfo = nullptr; // optional
-			write.pTexelBufferView = nullptr; // optional
+			VkDescriptorImageInfo img_info {};
+			img_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			img_info.imageView = tex_img_view;
+			img_info.sampler = tex_sampler;
 
-			vkUpdateDescriptorSets (device, 1, &write, 0, nullptr);
+			std::array<VkWriteDescriptorSet, 2> writes {};
+
+			writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writes[0].dstSet = descriptor_sets[i];
+			writes[0].dstBinding = 0;
+			writes[0].dstArrayElement = 0;
+			writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			writes[0].descriptorCount = 1;
+			writes[0].pBufferInfo = &buffer_info;
+			writes[0].pImageInfo = nullptr; // optional
+			writes[0].pTexelBufferView = nullptr; // optional
+
+			writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writes[1].dstSet = descriptor_sets[i];
+			writes[1].dstBinding = 1;
+			writes[1].dstArrayElement = 0;
+			writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writes[1].descriptorCount = 1;
+			writes[1].pBufferInfo = nullptr;
+			writes[1].pImageInfo = &img_info; // optional
+			writes[1].pTexelBufferView = nullptr; // optional
+
+			vkUpdateDescriptorSets
+			(
+				device, static_cast<uint32_t> (writes.size()), writes.data (), 0, nullptr
+			);
 		}
 	}
 
@@ -1387,6 +1425,8 @@ private:
 
 		if (vkAllocateMemory (device, &alloc_info, nullptr, &img_mem) != VK_SUCCESS)
 			throw std::runtime_error ("failed to allocate image memory");
+
+		vkBindImageMemory (device, img, img_mem, 0);
 	}
 
 	void create_texture_img ()
