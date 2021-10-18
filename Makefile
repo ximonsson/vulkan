@@ -13,9 +13,5 @@ shades: shaders/shader.vert shaders/shader.frag
 triangle: triangle.cpp
 	g++ $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test: all
-	./vulkan
-
 clean:
-	rm -f vulkan
 	rm triangle
