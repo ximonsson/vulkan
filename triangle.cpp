@@ -9,7 +9,9 @@
 #include <optional>
 #include <set>
 #include <fstream>
+
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
@@ -31,7 +33,7 @@ struct UniformBufferObject
 
 struct Vertex
 {
-	glm::vec2 pos;
+	glm::vec3 pos;
 	glm::vec3 color;
 	glm::vec2 tex_coord;
 
@@ -51,7 +53,7 @@ struct Vertex
 
 		desc[0].binding = 0;
 		desc[0].location = 0;
-		desc[0].format = VK_FORMAT_R32G32_SFLOAT;
+		desc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 		desc[0].offset = offsetof (Vertex, pos);
 
 		desc[1].binding = 0;
@@ -70,13 +72,22 @@ struct Vertex
 
 const std::vector<Vertex> vertices =
 {
-	{ { -0.5f, -0.5f }, { 1.0f,  0.0f, 0.0f }, { 1.0f, .0f } },
-	{ { 0.5f, -0.5f }, { 0.0f,  1.0f, 0.0f }, { .0f, .0f } },
-	{ { 0.5f, 0.5f }, { 0.0f,  0.0f, 1.0f }, { .0f, 1.0f } },
-	{ { -0.5f, 0.5f }, { 1.0f,  1.0f, 1.0f }, { 1.0f, 1.0f } }
+	{ { -0.5f, -0.5f, 0.0f }, { 1.0f,  0.0f, 0.0f }, { 1.0f, .0f } },
+	{ { 0.5f, -0.5f, 0.0f }, { 0.0f,  1.0f, 0.0f }, { .0f, .0f } },
+	{ { 0.5f, 0.5f, 0.0f }, { 0.0f,  0.0f, 1.0f }, { .0f, 1.0f } },
+	{ { -0.5f, 0.5f, 0.0f }, { 1.0f,  1.0f, 1.0f }, { 1.0f, 1.0f } },
+
+	{ { -0.5f, -0.5f, -0.5f }, { 1.0f,  0.0f, 0.0f }, { 1.0f, .0f } },
+	{ { 0.5f, -0.5f, -0.5f }, { 0.0f,  1.0f, 0.0f }, { .0f, .0f } },
+	{ { 0.5f, 0.5f, -0.5f }, { 0.0f,  0.0f, 1.0f }, { .0f, 1.0f } },
+	{ { -0.5f, 0.5f, -0.5f }, { 1.0f,  1.0f, 1.0f }, { 1.0f, 1.0f } }
 };
 
-const std::vector<uint16_t> indices = { 0, 1, 2, 2, 3, 0 };
+const std::vector<uint16_t> indices =
+{
+	0, 1, 2, 2, 3, 0,
+	4, 5, 6, 6, 7, 4
+};
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -227,37 +238,60 @@ private:
 	VkQueue gfx_queue;
 	VkQueue present_queue;
 	VkSurfaceKHR surface;
+	VkRenderPass render_pass;
+
+	/* swapchain */
 	VkSwapchainKHR swap_chain;
 	std::vector<VkImage> swapchain_images;
+	std::vector<VkFramebuffer> swapchain_framebufs;
 	VkFormat swapchain_img_fmt;
 	VkExtent2D swapchain_ext;
 	std::vector<VkImageView> swapchain_image_views;
-	VkRenderPass render_pass;
-	VkDescriptorSetLayout descriptor_set_layout;
+
+	/* pipeline */
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
-	std::vector<VkFramebuffer> swapchain_framebufs;
+
+	/* commands */
 	VkCommandPool cmdpool;
 	std::vector<VkCommandBuffer> cmdbuffers;
 	std::vector<VkSemaphore> img_available;
 	std::vector<VkSemaphore> render_finished;
 	std::vector<VkFence> in_flight_fences;
 	std::vector<VkFence> images_in_flight;
-	size_t current_frame = 0;
-	bool framebuf_resized = false;
+
+	/* vertex buffer */
 	VkBuffer vx_buf;
 	VkBuffer staging_buf;
 	VkDeviceMemory vx_buf_mem;
+
+	/* index buffer */
 	VkBuffer idx_buf;
 	VkDeviceMemory idx_buf_mem;
+
+	/* uniform buffer */
 	std::vector<VkBuffer> unif_buf;
 	std::vector<VkDeviceMemory> unif_buf_mem;
+
+	/* descriptor */
 	VkDescriptorPool descriptor_pool;
 	std::vector<VkDescriptorSet> descriptor_sets;
+	VkDescriptorSetLayout descriptor_set_layout;
+
+	/* texture */
 	VkImage tex_img;
 	VkDeviceMemory tex_img_mem;
 	VkImageView tex_img_view;
 	VkSampler tex_sampler;
+
+	/* depth buffer */
+	VkImage depth_img;
+	VkDeviceMemory depth_img_mem;
+	VkImageView depth_img_view;
+
+	/* state variables */
+	size_t current_frame = 0;
+	bool framebuf_resized = false;
 
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
 	(
@@ -1617,6 +1651,34 @@ private:
 		}
 	}
 
+	VkFormat find_supported_fmt
+	(
+		const std::vector<VkFormat> candidates,
+		VkImageTiling tiling,
+		VkFormatFeatureFlags feats
+	)
+	{
+		for (VkFormat fmt : candidates)
+		{
+			VkFormatProperties p;
+			vkGetPhysicalDeviceFormatProperties (physical_device, fmt, &p);
+
+			if (tiling == VK_IMAGE_TILING_LINEAR && (p.linearTilingFeatures & feats) == feats)
+			{
+				return fmt;
+			}
+			else if (tiling == VK_IMAGE_TILING_OPTIMAL && (p.optimalTilingFeatures & feats) == feats)
+			{
+				return fmt;
+			}
+		}
+	}
+
+	void create_depth_buffer ()
+	{
+
+	}
+
 	void init_vulkan ()
 	{
 		create_instance ();
@@ -1631,6 +1693,7 @@ private:
 		create_gfx_pipeline ();
 		create_framebuffers ();
 		create_cmd_pool ();
+		create_depth_buffer ();
 		create_texture_img ();
 		create_tex_img_view ();
 		create_tex_sampler ();
