@@ -8,7 +8,8 @@ layout(location = 2) in vec3 tex_coord;
 layout(location = 0) out vec3 frag_color;
 layout(location = 1) out vec3 frag_tex_coord;
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(binding = 0) uniform UniformBufferObject
+{
 	mat4 M;
 	mat4 V;
 	mat4 P;
