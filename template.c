@@ -154,7 +154,6 @@ static const char **get_required_extensions (uint32_t *n)
 	memcpy (ext, ext_, (*n) * sizeof (char *));
 	ext[(*n)] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 	*n += 1;
-	free (ext_);
 #endif
 
 	return ext;
@@ -165,9 +164,9 @@ static const char **get_required_extensions (uint32_t *n)
  */
 static const VkExtensionProperties *get_supported_extensions (uint32_t *n)
 {
-	vkEnumerateInstanceExtensionProperties(NULL, n, NULL);
+	vkEnumerateInstanceExtensionProperties (NULL, n, NULL);
 	VkExtensionProperties *ext = malloc ((*n) * sizeof (VkExtensionProperties));
-	vkEnumerateInstanceExtensionProperties(NULL, n, ext);
+	vkEnumerateInstanceExtensionProperties (NULL, n, ext);
 	return ext;
 }
 
@@ -204,7 +203,7 @@ void myDestroyDebugUtilsMessengerEXT
 }
 
 /**
- *	VARIABLES ---------------------------------------------------------------------------------------------------------
+ *	VARIABLES --------------------------------------------------------------------------------------------------
  */
 
 static GLFWwindow* win; // TODO what about offscreen rendering?
@@ -270,3 +269,190 @@ static VkImageView depth_img_view;
 static size_t current_frame = 0;
 static int framebuf_resized = 0;
 
+
+/**
+ * Callback when the framebuffer has been resized.
+ *
+ * TODO this does not feel like it is needed. Or?
+ */
+static void framebuf_resize_cb (GLFWwindow *win, int w, int h)
+{
+	// auto app = reinterpret_cast<HelloTriangleApplication*> (glfwGetWindowUserPointer (win));
+	framebuf_resized = 1;
+}
+
+/**
+ * Initialize GLFW window.
+ */
+void init_window ()
+{
+	glfwInit ();
+	glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
+	glfwWindowHint (GLFW_RESIZABLE, GLFW_FALSE);
+	win = glfwCreateWindow (WIDTH, HEIGHT, "Vulkan", NULL, NULL);
+	glfwSetFramebufferSizeCallback (win, framebuf_resize_cb);
+}
+
+/**
+ * No idea what goes on in this function.
+ */
+static VKAPI_ATTR VkBool32 VKAPI_CALL debug_callback
+(
+	VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+	VkDebugUtilsMessageTypeFlagsEXT type,
+	const VkDebugUtilsMessengerCallbackDataEXT* data,
+	void* userd
+)
+{
+	fprintf (stderr, "validation layer: %s\n", data->pMessage);
+	return VK_FALSE;
+}
+
+#ifdef DEBUG
+/**
+ * Populate debug message with more info.
+ */
+static void populate_debug_msg_info (VkDebugUtilsMessengerCreateInfoEXT *info)
+{
+	info->sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+	info->messageSeverity =
+		VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+		VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+		VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+	info->messageType =
+		VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+		VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+		VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+	info->pfnUserCallback = debug_callback;
+	info->pUserData = NULL;
+}
+
+static void setup_debugger ()
+{
+	VkDebugUtilsMessengerCreateInfoEXT info = { 0 };
+	populate_debug_msg_info (&info);
+	VkResult res;
+	if ((res = myCreateDebugUtilsMessengerEXT (instance, &info, NULL, &debug_messenger)) != VK_SUCCESS)
+	{
+		fprintf (stderr, "failed to set up debug messenger: %d!\n", res);
+		exit (1);
+	}
+}
+#endif
+
+static void create_instance ()
+{
+	// application info
+	//
+	// TODO not sure there is 1.2
+
+	VkApplicationInfo app_info = { 0 };
+	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+	app_info.pApplicationName = "hello madafaka";
+	app_info.applicationVersion = VK_MAKE_VERSION (1, 2, 0);
+	app_info.pEngineName = "No Engine";
+	app_info.engineVersion = VK_MAKE_VERSION (1, 2, 0);
+	app_info.apiVersion = VK_API_VERSION_1_2;
+
+	// instance create info
+
+	VkInstanceCreateInfo create_info = { 0 };
+	create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	create_info.pApplicationInfo = &app_info;
+
+	// extensions
+	//
+	// get required extensions and make sure they are all supported
+
+	uint32_t n_ext;
+	const char **ext = get_required_extensions (&n_ext);
+
+	uint32_t n_vk_ext;
+	const VkExtensionProperties *vk_ext = get_supported_extensions (&n_vk_ext);
+
+#ifdef DEBUG
+	printf ("%d extensions required\n", n_ext);
+#endif
+
+	for (int i = 0; i < n_ext; i ++)
+	{
+#ifdef DEBUG
+		printf ("\t%s =>", ext[i]);
+#endif
+		int found = 0;
+		for (int j = 0; j < n_vk_ext; j ++)
+		{
+			if (strcmp (ext[i], vk_ext[j].extensionName) == 0)
+			{
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+		{
+#ifdef DEBUG
+			printf ("not found!\n");
+#endif
+			fprintf (stderr, "not all extensions supported!\n");
+			exit (1);
+		}
+#ifdef DEBUG
+		else printf ("found\n");
+#endif
+	}
+	// all extensions supported
+	create_info.enabledExtensionCount = n_ext;
+	create_info.ppEnabledExtensionNames = ext;
+	create_info.flags = 0;
+
+	// validation layers
+
+#ifdef DEBUG
+	VkDebugUtilsMessengerCreateInfoEXT debug_info;
+	if (!check_validation_layer_support ())
+	{
+		fprintf (stderr, "validation layers requested but not supported!\n");
+		exit (1);
+	}
+	create_info.enabledLayerCount = N_VALIDATION_LAYERS;
+	create_info.ppEnabledLayerNames = validation_layers;
+
+	populate_debug_msg_info (&debug_info);
+	create_info.pNext = (VkDebugUtilsMessengerCreateInfoEXT *) &debug_info;
+#else
+	create_info.enabledLayerCount = 0;
+	create_info.pNext = NULL;
+#endif
+
+	// create the instance
+
+	VkResult res = vkCreateInstance (&create_info, NULL, &instance);
+	if (res != VK_SUCCESS)
+	{
+		fprintf (stderr, "failed to create instance! error code: %d\n", res);
+		exit (1);
+	}
+
+	free (ext);
+	free ((void *) vk_ext);
+}
+
+static void init_vulkan ()
+{
+	create_instance ();
+#ifdef DEBUG
+	setup_debugger ();
+#endif
+}
+
+void init ()
+{
+	init_window ();
+	init_vulkan ();
+}
+
+// TODO this is to be removed later when we know things work
+int main ()
+{
+	init ();
+}

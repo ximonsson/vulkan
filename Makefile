@@ -30,6 +30,9 @@ template: template.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c -o build/$@.o $^
 
+test: template
+	@mkdir -p bin
+	$(CC) $(CFLAGS) -o bin/test build/*.o $(LDFLAGS)
 
 clean:
 	rm -r bin

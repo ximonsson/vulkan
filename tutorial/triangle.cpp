@@ -192,7 +192,10 @@ void DestroyDebugUtilsMessengerEXT
 	const VkAllocationCallbacks* allocator
 )
 {
-	auto fn = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr (instance, "vkDestroyDebugUtilsMessengerEXT");
+	auto fn = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr
+	(
+		instance, "vkDestroyDebugUtilsMessengerEXT"
+	);
 	if (fn != nullptr)
 		fn (instance, messenger, allocator);
 }
