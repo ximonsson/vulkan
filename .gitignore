@@ -2,3 +2,5 @@ vulkan
 triangle
 template
 *.spv
+build
+bin
