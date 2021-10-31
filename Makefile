@@ -6,11 +6,15 @@ all: tutorial
 
 .PHONY: test clean
 
-tutorial: shades tutorial/bin/triangle
+# tutorial
 
-shades: tutorial/shaders/shader.vert tutorial/shaders/shader.frag
-	$(GLSL) -V -o tutorial/shaders/vert.spv tutorial/shaders/shader.vert
-	$(GLSL) -V -o tutorial/shaders/frag.spv tutorial/shaders/shader.frag
+tutorial: tutorial/shaders/vert.spv tutorial/shaders/frag.spv tutorial/bin/triangle
+
+tutorial/shaders/vert.spv: tutorial/shaders/shader.vert
+	$(GLSL) -V -o $@ $^
+
+tutorial/shaders/frag.spv: tutorial/shaders/shader.frag
+	$(GLSL) -V -o $@ $^
 
 tutorial/bin/triangle: tutorial/triangle.cpp
 	@mkdir -p tutorial/bin
