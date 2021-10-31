@@ -1,10 +1,13 @@
-CFLAGS = -std=c++17 -O2 -DNDEBUG=1 -I../stb
+CFLAGS_ = -std=c++17 -O2 -DNDEBUG=1 -I../stb
+CFLAGS = -O2 -DDEBUG=1
 LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
 GLSL = glslangValidator
+CC = gcc
 
-all: tutorial
+all: template
 
-.PHONY: test clean
+.PHONY: clean
+
 
 # tutorial
 
@@ -18,8 +21,17 @@ tutorial/shaders/frag.spv: tutorial/shaders/shader.frag
 
 tutorial/bin/triangle: tutorial/triangle.cpp
 	@mkdir -p tutorial/bin
-	g++ $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	g++ $(CFLAGS_) -o $@ $^ $(LDFLAGS)
+
+
+# make sure the template compiles
+
+template: template.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -c -o build/$@.o $^
+
 
 clean:
 	rm -r bin
 	rm -r tutorial/bin
+	rm -r build
