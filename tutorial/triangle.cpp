@@ -477,7 +477,10 @@ private:
 		if (present_mode_count != 0)
 		{
 			details.present_modes.resize (present_mode_count);
-			vkGetPhysicalDeviceSurfacePresentModesKHR (dev, surface, &present_mode_count, details.present_modes.data ());
+			vkGetPhysicalDeviceSurfacePresentModesKHR
+			(
+				dev, surface, &present_mode_count, details.present_modes.data ()
+			);
 		}
 
 		return details;
