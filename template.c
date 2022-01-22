@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
@@ -104,6 +105,13 @@ static const const char *device_extensions[1] =
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
+typedef struct SwapChainSupportDetails
+{
+	VkSurfaceCapabilitiesKHR capabilities;
+	VkSurfaceFormatKHR *fmts;
+	VkPresentModeKHR *present_modes;
+} SwapChainSupportDetails;
+
 #ifdef DEBUG
 /**
  *		check_validation_layer_support
@@ -181,8 +189,10 @@ VkResult myCreateDebugUtilsMessengerEXT
 	VkDebugUtilsMessengerEXT *messenger
 )
 {
-	PFN_vkCreateDebugUtilsMessengerEXT fn =
-		(PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr (instance, "vkCreateDebugUtilsMessengerEXT");
+	PFN_vkCreateDebugUtilsMessengerEXT fn = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr
+	(
+		instance, "vkCreateDebugUtilsMessengerEXT"
+	);
 	if (!fn) return VK_ERROR_EXTENSION_NOT_PRESENT;
 	return fn (instance, info, allocator, messenger);
 }
@@ -197,8 +207,10 @@ void myDestroyDebugUtilsMessengerEXT
 	const VkAllocationCallbacks *allocator
 )
 {
-	PFN_vkDestroyDebugUtilsMessengerEXT fn =
-		(PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr (instance, "vkDestroyDebugUtilsMessengerEXT");
+	PFN_vkDestroyDebugUtilsMessengerEXT fn = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr
+	(
+		instance, "vkDestroyDebugUtilsMessengerEXT"
+	);
 	if (fn) fn (instance, messenger, allocator);
 }
 
@@ -269,6 +281,31 @@ static VkImageView depth_img_view;
 static size_t current_frame = 0;
 static int framebuf_resized = 0;
 
+
+static void find_queue_families (VkPhysicalDevice dev, int *gfx_family, int *present_support)
+{
+	uint32_t n = 0;
+	vkGetPhysicalDeviceQueueFamilyProperties (dev, &n, NULL);
+	VkQueueFamilyProperties families[n];
+	vkGetPhysicalDeviceQueueFamilyProperties (dev, &n, families);
+
+	*gfx_family = -1;
+	*present_support = -1;
+
+	for (int i = 0; i < n; i ++)
+	{
+		VkQueueFamilyProperties family = families[i];
+
+		if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) *gfx_family = i;
+
+		VkBool32 sup = 0;
+		vkGetPhysicalDeviceSurfaceSupportKHR (dev, i, surface, &sup);
+
+		if (sup) *present_support = i;
+
+		if ((*present_support) != -1 && (*gfx_family) != -1) break;
+	}
+}
 
 /**
  * Callback when the framebuffer has been resized.
@@ -437,12 +474,117 @@ static void create_instance ()
 	free ((void *) vk_ext);
 }
 
+static void create_surface ()
+{
+	if (glfwCreateWindowSurface (instance, win, NULL, &surface) != VK_SUCCESS)
+	{
+		fprintf (stderr, "failed to create window surface\n");
+		exit (1);
+	}
+}
+
+int check_device_ext_support (VkPhysicalDevice dev)
+{
+	uint32_t n;
+	vkEnumerateDeviceExtensionProperties (dev, NULL, &n, NULL);
+	VkExtensionProperties ext[n];
+	vkEnumerateDeviceExtensionProperties (dev, NULL, &n, ext);
+
+	// TODO make some magic to make sure everything is in the list
+	for (int i = 0; i < n; i ++)
+	{
+		VkExtensionProperties e = ext[i];
+		//ext.extensionName is in dev_exts;
+	}
+
+	return 0;
+}
+
+SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice dev)
+{
+	SwapChainSupportDetails details;
+
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR (dev, surface, &details.capabilities);
+
+	uint32_t n;
+	vkGetPhysicalDeviceSurfaceFormatsKHR (dev, surface, &n, NULL);
+	if (n != 0)
+	{
+		details.fmts = malloc (sizeof (VkSurfaceFormatKHR) * n);
+		vkGetPhysicalDeviceSurfaceFormatsKHR (dev, surface, &n, details.fmts);
+	}
+
+	vkGetPhysicalDeviceSurfacePresentModesKHR (dev, surface, &n, NULL);
+	if (n != 0)
+	{
+		details.present_modes = malloc (sizeof (VkPresentModeKHR) * n);
+		vkGetPhysicalDeviceSurfacePresentModesKHR (dev, surface, &n, details.present_modes);
+	}
+
+	return details;
+}
+
+int is_device_suitable (VkPhysicalDevice dev)
+{
+	// Apparently this was just an example on how to do it.
+	VkPhysicalDeviceProperties props;
+	vkGetPhysicalDeviceProperties (dev, &props);
+
+	VkPhysicalDeviceFeatures feats;
+	vkGetPhysicalDeviceFeatures (dev, &feats);
+
+	//return props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && feats.geometryShader;
+	// std::cout << "\t" << props.deviceName << std::endl;
+	int gfx_family, present_support;
+	find_queue_families (dev, &gfx_family, &present_support);
+	int ext_support = check_device_ext_support (dev);
+
+	int swap_chain_adequate = 1;
+	if (ext_support)
+	{
+		SwapChainSupportDetails sup = query_swap_chain_support (dev);
+		swap_chain_adequate = sup.fmts && sup.present_modes;
+	}
+
+	// TODO
+	//return i.is_complete () && ext_support && swap_chain_adequate && feats.samplerAnisotropy;
+
+	return 1;
+}
+
+static void pick_physical_device ()
+{
+	uint32_t n;
+	vkEnumeratePhysicalDevices (instance, &n, NULL);
+	assert (n > 0);
+
+	VkPhysicalDevice devices[n];
+	vkEnumeratePhysicalDevices (instance, &n, devices);
+
+	for (int i = 0; i < n; i ++)
+	{
+		if (is_device_suitable (devices[i]) == 0)
+		{
+			physical_device = devices[i];
+			break;
+		}
+	}
+
+	assert (physical_device != VK_NULL_HANDLE);
+}
+
+static void create_logical_device ()
+{
+}
+
 static void init_vulkan ()
 {
 	create_instance ();
 #ifdef DEBUG
 	setup_debugger ();
 #endif
+	create_surface (); // TODO what about offscreen rendering?
+	pick_physical_device ();
 }
 
 void init ()
