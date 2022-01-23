@@ -100,7 +100,8 @@ static const const char *validation_layers[N_VALIDATION_LAYERS] =
 /**
  * Device extensions.
  */
-static const const char *device_extensions[1] =
+#define N_DEVICE_EXTENSIONS 1
+static const const char *device_extensions[N_DEVICE_EXTENSIONS] =
 {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -281,8 +282,10 @@ static VkImageView depth_img_view;
 static size_t current_frame = 0;
 static int framebuf_resized = 0;
 
-
-static void find_queue_families (VkPhysicalDevice dev, int *gfx_family, int *present_support)
+/**
+ * Queries queue families to find the one that supports the given device.
+ */
+static int query_queue_families (VkPhysicalDevice dev, int *gfx_family, int *present_support)
 {
 	uint32_t n = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties (dev, &n, NULL);
@@ -305,6 +308,8 @@ static void find_queue_families (VkPhysicalDevice dev, int *gfx_family, int *pre
 
 		if ((*present_support) != -1 && (*gfx_family) != -1) break;
 	}
+
+	return (*present_support) != -1 && (*gfx_family) != -1;
 }
 
 /**
@@ -321,7 +326,7 @@ static void framebuf_resize_cb (GLFWwindow *win, int w, int h)
 /**
  * Initialize GLFW window.
  */
-void init_window ()
+static void init_window ()
 {
 	glfwInit ();
 	glfwWindowHint (GLFW_CLIENT_API, GLFW_NO_API);
@@ -414,7 +419,7 @@ static void create_instance ()
 	for (int i = 0; i < n_ext; i ++)
 	{
 #ifdef DEBUG
-		printf ("\t%s =>", ext[i]);
+		printf ("\t%s => ", ext[i]);
 #endif
 		int found = 0;
 		for (int j = 0; j < n_vk_ext; j ++)
@@ -490,14 +495,22 @@ int check_device_ext_support (VkPhysicalDevice dev)
 	VkExtensionProperties ext[n];
 	vkEnumerateDeviceExtensionProperties (dev, NULL, &n, ext);
 
-	// TODO make some magic to make sure everything is in the list
-	for (int i = 0; i < n; i ++)
+	// x will be the number of required device extrensions that we support
+	// - then we check later is the same as the number of actual required extensions
+	int x = 0;
+
+	for (int j = 0; j < N_DEVICE_EXTENSIONS; j ++)
 	{
-		VkExtensionProperties e = ext[i];
-		//ext.extensionName is in dev_exts;
+		const char *req_ext = device_extensions[j];
+		for (int i = 0; i < n; i ++)
+		{
+			VkExtensionProperties e = ext[i];
+			if (strcmp(e.extensionName, req_ext) == 0)
+				x += 1;
+		}
 	}
 
-	return 0;
+	return x == N_DEVICE_EXTENSIONS;
 }
 
 SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice dev)
@@ -524,7 +537,7 @@ SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice dev)
 	return details;
 }
 
-int is_device_suitable (VkPhysicalDevice dev)
+static int is_device_suitable (VkPhysicalDevice dev)
 {
 	// Apparently this was just an example on how to do it.
 	VkPhysicalDeviceProperties props;
@@ -533,10 +546,8 @@ int is_device_suitable (VkPhysicalDevice dev)
 	VkPhysicalDeviceFeatures feats;
 	vkGetPhysicalDeviceFeatures (dev, &feats);
 
-	//return props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && feats.geometryShader;
-	// std::cout << "\t" << props.deviceName << std::endl;
 	int gfx_family, present_support;
-	find_queue_families (dev, &gfx_family, &present_support);
+	int qfound = query_queue_families (dev, &gfx_family, &present_support);
 	int ext_support = check_device_ext_support (dev);
 
 	int swap_chain_adequate = 1;
@@ -546,10 +557,24 @@ int is_device_suitable (VkPhysicalDevice dev)
 		swap_chain_adequate = sup.fmts && sup.present_modes;
 	}
 
-	// TODO
-	//return i.is_complete () && ext_support && swap_chain_adequate && feats.samplerAnisotropy;
+#ifdef DEBUG
+	printf ("physical device: %s => ", props.deviceName);
+#endif
 
-	return 1;
+	if (qfound && ext_support && swap_chain_adequate && feats.samplerAnisotropy)
+	{
+#ifdef DEBUG
+		printf ("good!\n");
+#endif
+		return 0;
+	}
+	else
+	{
+#ifdef DEBUG
+		printf ("no good!\n");
+#endif
+		return 1;
+	}
 }
 
 static void pick_physical_device ()
