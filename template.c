@@ -285,7 +285,11 @@ static int framebuf_resized = 0;
 /**
  * Queries queue families to find the one that supports the given device.
  */
-static int query_queue_families (VkPhysicalDevice dev, int *gfx_family, int *present_support)
+static int query_queue_families (
+	VkPhysicalDevice dev,
+	int *gfx_family,
+	int *present_support
+)
 {
 	uint32_t n = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties (dev, &n, NULL);
@@ -475,7 +479,9 @@ static void create_instance ()
 		exit (1);
 	}
 
+#ifdef DEBUG
 	free (ext);
+#endif
 	free ((void *) vk_ext);
 }
 
@@ -600,6 +606,44 @@ static void pick_physical_device ()
 
 static void create_logical_device ()
 {
+	int gfx_family, present_support;
+	query_queue_families (physical_device, &gfx_family, &present_support);
+
+	const int nfamilies = 2;
+	float prio = 1.0f;
+	uint32_t families[2] = { gfx_family, present_support };
+	VkDeviceQueueCreateInfo qinfos[nfamilies];
+
+	for (int i = 0; i < nfamilies; i ++)
+	{
+		qinfos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		qinfos[i].queueFamilyIndex = families[i];
+		qinfos[i].queueCount = 1;
+		qinfos[i].pQueuePriorities = &prio;
+	}
+
+	VkPhysicalDeviceFeatures feats = {};
+	feats.samplerAnisotropy = VK_TRUE;
+
+	VkDeviceCreateInfo info = {};
+	info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+	info.pQueueCreateInfos = qinfos;
+	info.queueCreateInfoCount = nfamilies;
+	info.pEnabledFeatures = &feats;
+	info.enabledExtensionCount = N_DEVICE_EXTENSIONS;
+	info.ppEnabledExtensionNames = device_extensions;
+
+#ifdef DEBUG
+	info.enabledLayerCount = N_VALIDATION_LAYERS;
+	info.ppEnabledLayerNames = validation_layers;
+#else
+	info.enabledLayerCount = 0;
+#endif
+
+	assert (vkCreateDevice (physical_device, &info, NULL, &device) != VK_SUCCESS);
+
+	vkGetDeviceQueue (device, gfx_family, 0, &gfx_queue);
+	vkGetDeviceQueue (device, present_support, 0, &present_queue);
 }
 
 static void init_vulkan ()
@@ -610,6 +654,7 @@ static void init_vulkan ()
 #endif
 	create_surface (); // TODO what about offscreen rendering?
 	pick_physical_device ();
+	create_logical_device ();
 }
 
 void init ()
