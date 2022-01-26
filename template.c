@@ -287,33 +287,39 @@ static int framebuf_resized = 0;
  */
 static int query_queue_families (
 	VkPhysicalDevice dev,
-	int *gfx_family,
-	int *present_support
+	uint32_t *gfx_family,
+	uint32_t *present_support
 )
 {
 	uint32_t n = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties (dev, &n, NULL);
 	VkQueueFamilyProperties families[n];
 	vkGetPhysicalDeviceQueueFamilyProperties (dev, &n, families);
-
-	*gfx_family = -1;
-	*present_support = -1;
+	uint8_t found_gfx_family = 0, found_present_support = 0;
 
 	for (int i = 0; i < n; i ++)
 	{
 		VkQueueFamilyProperties family = families[i];
 
-		if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) *gfx_family = i;
+		if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+		{
+			*gfx_family = i;
+			found_gfx_family = 1;
+		}
 
 		VkBool32 sup = 0;
 		vkGetPhysicalDeviceSurfaceSupportKHR (dev, i, surface, &sup);
 
-		if (sup) *present_support = i;
+		if (sup)
+		{
+			*present_support = i;
+			found_present_support = 1;
+		}
 
-		if ((*present_support) != -1 && (*gfx_family) != -1) break;
+		if (found_gfx_family && found_present_support) break;
 	}
 
-	return (*present_support) != -1 && (*gfx_family) != -1;
+	return found_gfx_family && found_present_support;
 }
 
 /**
@@ -606,10 +612,13 @@ static void pick_physical_device ()
 
 static void create_logical_device ()
 {
-	int gfx_family, present_support;
+	uint32_t gfx_family, present_support;
 	query_queue_families (physical_device, &gfx_family, &present_support);
 
-	const int nfamilies = 2;
+	// I find this part with queue families very confusing and static.
+	// Can maybe be re-worked one day when I understand better what the hell is going on.
+
+	const uint32_t nfamilies = gfx_family == present_support ? 1 : 2;
 	float prio = 1.0f;
 	uint32_t families[2] = { gfx_family, present_support };
 	VkDeviceQueueCreateInfo qinfos[nfamilies];
@@ -640,7 +649,7 @@ static void create_logical_device ()
 	info.enabledLayerCount = 0;
 #endif
 
-	assert (vkCreateDevice (physical_device, &info, NULL, &device) != VK_SUCCESS);
+	assert (vkCreateDevice (physical_device, &info, NULL, &device) == VK_SUCCESS);
 
 	vkGetDeviceQueue (device, gfx_family, 0, &gfx_queue);
 	vkGetDeviceQueue (device, present_support, 0, &present_queue);
