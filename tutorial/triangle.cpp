@@ -1001,8 +1001,8 @@ private:
 
 	void create_gfx_pipeline ()
 	{
-		auto vert_shader_code = read_file ("shaders/vert.spv");
-		auto frag_shader_code = read_file ("shaders/frag.spv");
+		auto vert_shader_code = read_file ("tutorial/shaders/vert.spv");
+		auto frag_shader_code = read_file ("tutorial/shaders/frag.spv");
 
 		VkShaderModule vert_shader_mod = create_shader_module (vert_shader_code);
 		VkShaderModule frag_shader_mod = create_shader_module (frag_shader_code);
@@ -1513,7 +1513,7 @@ private:
 	{
 		int w, h, c;
 
-		stbi_uc *pix = stbi_load ("textures/texture.jpg", &w, &h, &c, STBI_rgb_alpha);
+		stbi_uc *pix = stbi_load ("tutorial/textures/texture.jpg", &w, &h, &c, STBI_rgb_alpha);
 		VkDeviceSize size = w * h * 4;
 
 		if (!pix)
