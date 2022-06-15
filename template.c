@@ -655,6 +655,11 @@ static void create_logical_device ()
 	vkGetDeviceQueue (device, present_support, 0, &present_queue);
 }
 
+static void create_swapchain ()
+{
+	// TODO implment this
+}
+
 static void init_vulkan ()
 {
 	create_instance ();
@@ -664,6 +669,7 @@ static void init_vulkan ()
 	create_surface (); // TODO what about offscreen rendering?
 	pick_physical_device ();
 	create_logical_device ();
+	create_swapchain ();
 }
 
 void init ()
