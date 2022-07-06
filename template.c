@@ -111,7 +111,27 @@ typedef struct SwapChainSupportDetails
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSurfaceFormatKHR *fmts;
 	VkPresentModeKHR *present_modes;
+	int32_t nfmts;
+	int32_t npresmodes;
 } SwapChainSupportDetails;
+
+typedef struct QueueFamilyIndices
+{
+	int32_t gfx_family;
+	int32_t present_family;
+} QueueFamilyIndices;
+
+void queue_family_indices_init (QueueFamilyIndices *idx)
+{
+	idx->gfx_family = idx->present_family = -1;
+}
+
+int queue_family_indices_is_complete (const QueueFamilyIndices *idx)
+{
+	// TODO is zero correct to check?
+	return (idx->gfx_family != -1) && (idx->present_family != -1);
+}
+
 
 #ifdef DEBUG
 /**
@@ -213,6 +233,70 @@ void myDestroyDebugUtilsMessengerEXT
 		instance, "vkDestroyDebugUtilsMessengerEXT"
 	);
 	if (fn) fn (instance, messenger, allocator);
+}
+
+static VkSurfaceFormatKHR choose_swap_surface_format (const VkSurfaceFormatKHR *fmts, size_t n) {
+	for (size_t i = 0; i < n; i ++)
+	{
+		VkSurfaceFormatKHR fmt = fmts[i];
+		if
+		(
+			fmt.format == VK_FORMAT_B8G8R8A8_SRGB &&
+			fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+		)
+		{
+			return fmt;
+		}
+	}
+
+	return fmts[0];
+}
+
+static VkPresentModeKHR choose_swap_present_mode (const VkPresentModeKHR *modes, size_t n)
+{
+	for (size_t i = 0; i < n; i ++)
+	{
+		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
+			return modes[i];
+	}
+
+	return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+static VkExtent2D choose_swap_extent (VkSurfaceCapabilitiesKHR capabilities)
+{
+	return capabilities.currentExtent;
+
+	// TODO check if below is needed
+
+	/*
+	if (capabilities.currentExtent.width != UINT32_MAX)
+		return capabilities.currentExtent;
+	else
+	{
+		int w, h;
+		glfwGetFramebufferSize (win, &w, &h);
+
+		VkExtent2D ext =
+		{
+			static_cast<uint32_t>(w),
+			static_cast<uint32_t>(h),
+		};
+
+		ext.width = std::max
+		(
+			capabilities.minImageExtent.width,
+			std::min (capabilities.maxImageExtent.width, ext.width)
+		);
+		ext.height = std::max
+		(
+			capabilities.minImageExtent.height,
+			std::min (capabilities.maxImageExtent.height, ext.height)
+		);
+
+		return ext;
+	}
+	*/
 }
 
 /**
@@ -537,6 +621,7 @@ SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice dev)
 	{
 		details.fmts = malloc (sizeof (VkSurfaceFormatKHR) * n);
 		vkGetPhysicalDeviceSurfaceFormatsKHR (dev, surface, &n, details.fmts);
+		details.nfmts = n;
 	}
 
 	vkGetPhysicalDeviceSurfacePresentModesKHR (dev, surface, &n, NULL);
@@ -544,6 +629,7 @@ SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice dev)
 	{
 		details.present_modes = malloc (sizeof (VkPresentModeKHR) * n);
 		vkGetPhysicalDeviceSurfacePresentModesKHR (dev, surface, &n, details.present_modes);
+		details.npresmodes = n;
 	}
 
 	return details;
@@ -655,12 +741,97 @@ static void create_logical_device ()
 	vkGetDeviceQueue (device, present_support, 0, &present_queue);
 }
 
-static void create_swapchain ()
+static QueueFamilyIndices find_queue_families (VkPhysicalDevice dev)
 {
-	// TODO implment this
+	QueueFamilyIndices idx;
+	queue_family_indices_init (&idx);
+
+	uint32_t count = 0;
+
+	vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, NULL);
+	VkQueueFamilyProperties families[count];
+	vkGetPhysicalDeviceQueueFamilyProperties (dev, &count, families);
+
+	int i = 0;
+	for (; i < count; i ++)
+	{
+		VkQueueFamilyProperties *family = &families[i];
+		if (family->queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			idx.gfx_family = i;
+
+		VkBool32 present_support = VK_FALSE;
+		vkGetPhysicalDeviceSurfaceSupportKHR (dev, i, surface, &present_support);
+
+		if (present_support)
+			idx.present_family = i;
+
+		if (queue_family_indices_is_complete (&idx))
+			break;
+	}
+
+	return idx;
 }
 
-static void init_vulkan ()
+static int create_swapchain ()
+{
+	// TODO implment this
+	SwapChainSupportDetails sup = query_swap_chain_support (physical_device);
+
+	VkSurfaceFormatKHR fmt = choose_swap_surface_format (sup.fmts, sup.nfmts);
+	VkPresentModeKHR mode = choose_swap_present_mode (sup.present_modes, sup.npresmodes);
+	VkExtent2D ext = choose_swap_extent (sup.capabilities);
+
+	uint32_t imcount = sup.capabilities.minImageCount + 1;
+	if (sup.capabilities.maxImageCount > 0 && imcount > sup.capabilities.maxImageCount)
+		imcount = sup.capabilities.maxImageCount;
+
+	VkSwapchainCreateInfoKHR info;
+	info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	info.surface = surface;
+	info.minImageCount = imcount;
+	info.imageFormat = fmt.format;
+	info.imageColorSpace = fmt.colorSpace;
+	info.imageExtent = ext;
+	info.imageArrayLayers = 1;
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	QueueFamilyIndices idx = find_queue_families (physical_device);
+	uint32_t qfamilyidx[] = { idx.gfx_family, idx.present_family };
+
+	if (idx.gfx_family != idx.present_family)
+	{
+		info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+		info.queueFamilyIndexCount = 2;
+		info.pQueueFamilyIndices = qfamilyidx;
+	}
+	else
+	{
+		info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		info.queueFamilyIndexCount = 0; // optional
+		info.pQueueFamilyIndices = NULL; // optional
+	}
+
+	info.preTransform = sup.capabilities.currentTransform;
+	info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	info.presentMode = mode;
+	info.clipped = VK_TRUE;
+	info.oldSwapchain = VK_NULL_HANDLE;
+
+	if (vkCreateSwapchainKHR (device, &info, NULL, &swap_chain) != VK_SUCCESS)
+		return 1;
+
+	// create swapchain image handles
+
+	vkGetSwapchainImagesKHR (device, swap_chain, &imcount, NULL);
+	vkGetSwapchainImagesKHR (device, swap_chain, &imcount, swapchain_images);
+
+	swapchain_img_fmt = fmt.format;
+	swapchain_ext = ext;
+
+	return 0;
+}
+
+static int init_vulkan ()
 {
 	create_instance ();
 #ifdef DEBUG
@@ -669,7 +840,12 @@ static void init_vulkan ()
 	create_surface (); // TODO what about offscreen rendering?
 	pick_physical_device ();
 	create_logical_device ();
-	create_swapchain ();
+	if (create_swapchain () != 0) {
+		fprintf (stderr, "failed to create swapchain!\n");
+		return 1;
+	}
+
+	return 0;
 }
 
 void init ()
