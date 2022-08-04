@@ -59,8 +59,8 @@ static const uint16_t indices[12] =
 	4, 5, 6, 6, 7, 4
 };
 
-static const uint32_t WIDTH = 800;
-static const uint32_t HEIGHT = 600;
+static const uint32_t WIDTH = 200;
+static const uint32_t HEIGHT = 150;
 static const int MAX_FRAMES_IN_FLIGHT = 2;
 
 /**
@@ -539,12 +539,11 @@ static void create_instance ()
 	// all extensions supported
 	create_info.enabledExtensionCount = n_ext;
 	create_info.ppEnabledExtensionNames = ext;
-	create_info.flags = 0;
 
 	// validation layers
 
 #ifdef DEBUG
-	VkDebugUtilsMessengerCreateInfoEXT debug_info;
+	VkDebugUtilsMessengerCreateInfoEXT debug_info = { 0 };
 	if (!check_validation_layer_support ())
 	{
 		fprintf (stderr, "validation layers requested but not supported!\n");
@@ -570,6 +569,7 @@ static void create_instance ()
 	}
 
 #ifdef DEBUG
+	// TODO this is ugly
 	free (ext);
 #endif
 	free ((void *) vk_ext);
@@ -708,19 +708,22 @@ static void create_logical_device ()
 	float prio = 1.0f;
 	uint32_t families[2] = { gfx_family, present_support };
 	VkDeviceQueueCreateInfo qinfos[nfamilies];
+	memset(qinfos, 0, sizeof (VkDeviceQueueCreateInfo) * nfamilies);
 
 	for (int i = 0; i < nfamilies; i ++)
 	{
+		//VkDeviceQueueCreateInfo info = { 0 };
 		qinfos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 		qinfos[i].queueFamilyIndex = families[i];
 		qinfos[i].queueCount = 1;
 		qinfos[i].pQueuePriorities = &prio;
+		//qinfos[i] = info;
 	}
 
-	VkPhysicalDeviceFeatures feats = {};
+	VkPhysicalDeviceFeatures feats = { 0 };
 	feats.samplerAnisotropy = VK_TRUE;
 
-	VkDeviceCreateInfo info = {};
+	VkDeviceCreateInfo info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	info.pQueueCreateInfos = qinfos;
 	info.queueCreateInfoCount = nfamilies;

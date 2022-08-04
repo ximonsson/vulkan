@@ -1,6 +1,7 @@
 CFLAGS_ = -std=c++17 -O2 -DNDEBUG=1 -I../stb -g3
 CFLAGS = -g3 -DDEBUG=1
-LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
+#LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
+LDFLAGS = -lglfw -lvulkan -ldl
 GLSL = glslangValidator
 CC = gcc
 
