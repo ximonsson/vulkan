@@ -708,7 +708,8 @@ private:
 		// create swapchain image handles
 
 		vkGetSwapchainImagesKHR (device, swap_chain, &imcount, nullptr);
-		swapchain_images.resize (imcount); vkGetSwapchainImagesKHR (device, swap_chain, &imcount, swapchain_images.data ());
+		swapchain_images.resize (imcount);
+		vkGetSwapchainImagesKHR (device, swap_chain, &imcount, swapchain_images.data ());
 
 		swapchain_img_fmt = fmt.format;
 		swapchain_ext = ext;
