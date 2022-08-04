@@ -775,7 +775,7 @@ static QueueFamilyIndices find_queue_families (VkPhysicalDevice dev)
 	return idx;
 }
 
-static int create_swapchain ()
+static void create_swapchain ()
 {
 	// TODO implment this
 	SwapChainSupportDetails sup = query_swap_chain_support (physical_device);
@@ -820,8 +820,7 @@ static int create_swapchain ()
 	info.clipped = VK_TRUE;
 	info.oldSwapchain = VK_NULL_HANDLE;
 
-	if (vkCreateSwapchainKHR (device, &info, NULL, &swap_chain) != VK_SUCCESS)
-		return 1;
+	assert(vkCreateSwapchainKHR (device, &info, NULL, &swap_chain) == VK_SUCCESS);
 
 	// create swapchain image handles
 
@@ -830,8 +829,6 @@ static int create_swapchain ()
 
 	swapchain_img_fmt = fmt.format;
 	swapchain_ext = ext;
-
-	return 0;
 }
 
 static int init_vulkan ()
@@ -843,10 +840,7 @@ static int init_vulkan ()
 	create_surface (); // TODO what about offscreen rendering?
 	pick_physical_device ();
 	create_logical_device ();
-	if (create_swapchain () != 0) {
-		fprintf (stderr, "failed to create swapchain!\n");
-		return 1;
-	}
+	create_swapchain ();
 
 	return 0;
 }
