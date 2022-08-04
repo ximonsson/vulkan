@@ -115,6 +115,13 @@ typedef struct SwapChainSupportDetails
 	int32_t npresmodes;
 } SwapChainSupportDetails;
 
+static void swapchain_support_details_free (SwapChainSupportDetails *details)
+{
+	if (details->fmts != NULL) free (details->fmts);
+	if (details->present_modes != NULL) free (details->present_modes);
+	details = NULL;
+}
+
 typedef struct QueueFamilyIndices
 {
 	int32_t gfx_family;
@@ -314,12 +321,14 @@ static VkSurfaceKHR surface;
 static VkRenderPass render_pass;
 
 /* swapchain */
-static VkSwapchainKHR swap_chain;
-static VkImage *swapchain_images;
+static VkSwapchainKHR swapchain;
+static VkImage *swapchain_imgs;
+static uint32_t n_swapchain_imgs;
 static VkFramebuffer *swapchain_framebufs;
 static VkFormat swapchain_img_fmt;
 static VkExtent2D swapchain_ext;
-static VkImageView *swapchain_image_views;
+static VkImageView *swapchain_img_views;
+static uint32_t n_swapchain_img_views;
 
 /* pipeline */
 static VkPipelineLayout pipeline_layout;
@@ -609,7 +618,7 @@ int check_device_ext_support (VkPhysicalDevice dev)
 	return x == N_DEVICE_EXTENSIONS;
 }
 
-SwapChainSupportDetails query_swap_chain_support (VkPhysicalDevice dev)
+SwapChainSupportDetails query_swapchain_support (VkPhysicalDevice dev)
 {
 	SwapChainSupportDetails details;
 
@@ -648,18 +657,19 @@ static int is_device_suitable (VkPhysicalDevice dev)
 	int qfound = query_queue_families (dev, &gfx_family, &present_support);
 	int ext_support = check_device_ext_support (dev);
 
-	int swap_chain_adequate = 1;
+	int swapchain_adequate = 1;
 	if (ext_support)
 	{
-		SwapChainSupportDetails sup = query_swap_chain_support (dev);
-		swap_chain_adequate = sup.fmts && sup.present_modes;
+		SwapChainSupportDetails sup = query_swapchain_support (dev);
+		swapchain_adequate = sup.fmts && sup.present_modes;
+		swapchain_support_details_free (&sup);
 	}
 
 #ifdef DEBUG
 	printf ("physical device: %s => ", props.deviceName);
 #endif
 
-	if (qfound && ext_support && swap_chain_adequate && feats.samplerAnisotropy)
+	if (qfound && ext_support && swapchain_adequate && feats.samplerAnisotropy)
 	{
 #ifdef DEBUG
 		printf ("good!\n");
@@ -777,8 +787,7 @@ static QueueFamilyIndices find_queue_families (VkPhysicalDevice dev)
 
 static void create_swapchain ()
 {
-	// TODO implment this
-	SwapChainSupportDetails sup = query_swap_chain_support (physical_device);
+	SwapChainSupportDetails sup = query_swapchain_support (physical_device);
 
 	VkSurfaceFormatKHR fmt = choose_swap_surface_format (sup.fmts, sup.nfmts);
 	VkPresentModeKHR mode = choose_swap_present_mode (sup.present_modes, sup.npresmodes);
@@ -788,7 +797,7 @@ static void create_swapchain ()
 	if (sup.capabilities.maxImageCount > 0 && imcount > sup.capabilities.maxImageCount)
 		imcount = sup.capabilities.maxImageCount;
 
-	VkSwapchainCreateInfoKHR info;
+	VkSwapchainCreateInfoKHR info = { 0 };
 	info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	info.surface = surface;
 	info.minImageCount = imcount;
@@ -820,15 +829,73 @@ static void create_swapchain ()
 	info.clipped = VK_TRUE;
 	info.oldSwapchain = VK_NULL_HANDLE;
 
-	assert(vkCreateSwapchainKHR (device, &info, NULL, &swap_chain) == VK_SUCCESS);
+	assert(vkCreateSwapchainKHR (device, &info, NULL, &swapchain) == VK_SUCCESS);
 
 	// create swapchain image handles
 
-	vkGetSwapchainImagesKHR (device, swap_chain, &imcount, NULL);
-	vkGetSwapchainImagesKHR (device, swap_chain, &imcount, swapchain_images);
+	assert(
+		vkGetSwapchainImagesKHR (
+			device,
+			swapchain,
+			&n_swapchain_imgs,
+			NULL
+		) == VK_SUCCESS
+	);
+	swapchain_imgs = malloc (n_swapchain_imgs * sizeof (VkImage));
+	assert(
+		vkGetSwapchainImagesKHR (
+			device,
+			swapchain,
+			&n_swapchain_imgs,
+			swapchain_imgs
+		) == VK_SUCCESS
+	);
 
 	swapchain_img_fmt = fmt.format;
 	swapchain_ext = ext;
+	swapchain_support_details_free (&sup);
+}
+
+static void create_img_view
+(
+	VkImageView *view,
+	VkImage img,
+	VkFormat fmt,
+	VkImageAspectFlags flags
+)
+{
+	VkImageViewCreateInfo info = { 0 };
+	info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	info.image = img;
+	info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	info.format = fmt;
+	info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+	info.subresourceRange.baseMipLevel = 0;
+	info.subresourceRange.levelCount = 1;
+	info.subresourceRange.baseArrayLayer = 0;
+	info.subresourceRange.layerCount = 1;
+	info.subresourceRange.aspectMask = flags;
+
+	assert (vkCreateImageView (device, &info, NULL, view) == VK_SUCCESS);
+}
+
+static void create_img_views ()
+{
+	n_swapchain_img_views = n_swapchain_imgs;
+	swapchain_img_views = (VkImageView *) calloc (n_swapchain_img_views, sizeof (VkImageView));
+
+	for (int i = 0; i < n_swapchain_img_views; i ++)
+	{
+		create_img_view (
+			&swapchain_img_views[i],
+			swapchain_imgs[i],
+			swapchain_img_fmt,
+			VK_IMAGE_ASPECT_COLOR_BIT
+		);
+	}
 }
 
 static int init_vulkan ()
@@ -841,6 +908,7 @@ static int init_vulkan ()
 	pick_physical_device ();
 	create_logical_device ();
 	create_swapchain ();
+	create_img_views ();
 
 	return 0;
 }
@@ -851,8 +919,20 @@ void init ()
 	init_vulkan ();
 }
 
+static void deinit_vulkan ()
+{
+	free (swapchain_imgs);
+	free (swapchain_img_views);
+}
+
+void deinit ()
+{
+	deinit_vulkan ();
+}
+
 // TODO this is to be removed later when we know things work
 int main ()
 {
 	init ();
+	deinit ();
 }
