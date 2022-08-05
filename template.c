@@ -1760,6 +1760,26 @@ static void create_idx_buf ()
 	vkFreeMemory (device, staging_buf_mem, NULL);
 }
 
+static void create_uniform_buf ()
+{
+	// TODO
+	// this is 3 4x4 matrices - should it be like this?
+	VkDeviceSize size = sizeof (float) * 4 * 4 * 3;
+
+	unif_buf = calloc (n_swapchain_imgs, sizeof (VkBuffer));
+	unif_buf_mem = calloc (n_swapchain_imgs, sizeof (VkDeviceMemory));
+
+	for (size_t i = 0; i < n_swapchain_imgs; i ++)
+		create_buffer
+		(
+			size,
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&unif_buf[i],
+			&unif_buf_mem[i]
+		);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1782,7 +1802,7 @@ static int init_vulkan ()
 	create_tex_sampler ();
 	create_vx_buf ();
 	create_idx_buf ();
-	//create_uniform_buf ();
+	create_uniform_buf ();
 	//create_descriptor_pool ();
 	//create_descriptor_sets ();
 	//create_cmd_buffers ();
@@ -1799,6 +1819,8 @@ void init ()
 
 static void deinit_vulkan ()
 {
+	free (unif_buf);
+	free (unif_buf_mem);
 	free (swapchain_imgs);
 	free (swapchain_img_views);
 	free (swapchain_framebufs);
