@@ -1645,6 +1645,13 @@ static void create_tex_img ()
 	vkFreeMemory (device, staging_buf_mem, NULL);
 }
 
+static void create_tex_img_view ()
+{
+	create_img_view (
+		&tex_img_view, tex_img, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT
+	);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1663,6 +1670,15 @@ static int init_vulkan ()
 	create_depth_buffer ();
 	create_framebuffers ();
 	create_tex_img ();
+	create_tex_img_view ();
+	//create_tex_sampler ();
+	//create_vx_buf ();
+	//create_idx_buf ();
+	//create_uniform_buf ();
+	//create_descriptor_pool ();
+	//create_descriptor_sets ();
+	//create_cmd_buffers ();
+	//create_sync ();
 
 	return 0;
 }
