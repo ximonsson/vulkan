@@ -1652,6 +1652,31 @@ static void create_tex_img_view ()
 	);
 }
 
+static void create_tex_sampler ()
+{
+	VkSamplerCreateInfo info = { 0 };
+	info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	info.magFilter = VK_FILTER_LINEAR;
+	info.minFilter = VK_FILTER_LINEAR;
+	info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	info.anisotropyEnable = VK_TRUE;
+
+	VkPhysicalDeviceProperties props = { 0 };
+	vkGetPhysicalDeviceProperties (physical_device, &props);
+
+	info.maxAnisotropy = props.limits.maxSamplerAnisotropy;
+	info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	info.unnormalizedCoordinates = VK_FALSE;
+	info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	info.mipLodBias = 0.0f;
+	info.minLod = 0.0f;
+	info.maxLod = 0.0f;
+
+	assert (vkCreateSampler (device, &info, NULL, &tex_sampler) == VK_SUCCESS);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1671,7 +1696,7 @@ static int init_vulkan ()
 	create_framebuffers ();
 	create_tex_img ();
 	create_tex_img_view ();
-	//create_tex_sampler ();
+	create_tex_sampler ();
 	//create_vx_buf ();
 	//create_idx_buf ();
 	//create_uniform_buf ();
