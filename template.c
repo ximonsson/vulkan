@@ -6,6 +6,9 @@
 #include <string.h>
 #include <assert.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #define GLFW_INCLUDE_VULKAM
 #include <GLFW/glfw3.h>
 
@@ -1515,6 +1518,133 @@ static void create_framebuffers ()
 	}
 }
 
+static void create_buffer
+(
+	VkDeviceSize size,
+	VkBufferUsageFlags usage,
+	VkMemoryPropertyFlags props,
+	VkBuffer *buf,
+	VkDeviceMemory *mem
+)
+{
+	VkBufferCreateInfo info = { 0 };
+	info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	info.size = size;
+	info.usage = usage;
+	info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	assert (vkCreateBuffer (device, &info, NULL, buf) == VK_SUCCESS);
+
+	VkMemoryRequirements mem_req;
+	vkGetBufferMemoryRequirements (device, *buf, &mem_req);
+
+	VkMemoryAllocateInfo alloc_info = { 0 };
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = mem_req.size;
+	alloc_info.memoryTypeIndex = find_mem_type
+	(
+		mem_req.memoryTypeBits,
+		props
+	);
+
+	assert (vkAllocateMemory (device, &alloc_info, NULL, mem) == VK_SUCCESS);
+
+	vkBindBufferMemory (device, *buf, *mem, 0);
+}
+
+static void cp_buf_img (VkBuffer buf, VkImage img, uint32_t w, uint32_t h)
+{
+	VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+	VkBufferImageCopy region = { 0 };
+
+	region.bufferOffset = 0;
+	region.bufferRowLength = 0;
+	region.bufferImageHeight = 0;
+
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	region.imageSubresource.mipLevel = 0;
+	region.imageSubresource.baseArrayLayer = 0;
+	region.imageSubresource.layerCount = 1;
+
+	VkOffset3D offset = { 0, 0, 0 };
+	VkExtent3D ext = { w, h, 1 };
+	region.imageOffset = offset;
+	region.imageExtent = ext;
+
+	vkCmdCopyBufferToImage (cmdbuf, buf, img, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+	end_single_time_cmds (cmdbuf);
+}
+
+static void create_tex_img ()
+{
+	int w, h, c;
+
+	stbi_uc *pix = stbi_load ("tutorial/textures/texture.jpg", &w, &h, &c, STBI_rgb_alpha);
+	VkDeviceSize size = w * h * 4;
+
+	assert (pix);
+
+	VkBuffer staging_buf;
+	VkDeviceMemory staging_buf_mem;
+
+	create_buffer
+	(
+		size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&staging_buf,
+		&staging_buf_mem
+	);
+
+	void *data;
+	vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+	memcpy (data, pix, size);
+	vkUnmapMemory (device, staging_buf_mem);
+
+	stbi_image_free (pix);
+
+	create_img
+	(
+		w,
+		h,
+		VK_FORMAT_R8G8B8A8_SRGB,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		&tex_img,
+		&tex_img_mem
+	);
+
+	transition_img_layout
+	(
+		tex_img,
+		VK_FORMAT_R8G8B8A8_SRGB,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+	);
+
+	cp_buf_img
+	(
+		staging_buf,
+		tex_img,
+		w,
+		h
+	);
+
+	transition_img_layout
+	(
+		tex_img,
+		VK_FORMAT_R8G8B8A8_SRGB,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	);
+
+	vkDestroyBuffer (device, staging_buf, NULL);
+	vkFreeMemory (device, staging_buf_mem, NULL);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1532,6 +1662,7 @@ static int init_vulkan ()
 	create_cmd_pool ();
 	create_depth_buffer ();
 	create_framebuffers ();
+	create_tex_img ();
 
 	return 0;
 }

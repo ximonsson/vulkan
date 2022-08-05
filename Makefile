@@ -1,7 +1,6 @@
 CFLAGS_ = -std=c++17 -O2 -DNDEBUG=1 -I../stb -g3
-CFLAGS = -g3 -DDEBUG=1
-#LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi
-LDFLAGS = -lglfw -lvulkan -ldl
+CFLAGS = -g3 -DDEBUG=1 -I../stb
+LDFLAGS = -lglfw -lvulkan -ldl -lpthread -lX11 -lXxf86vm -lXrandr -lXi -lm
 GLSL = glslangValidator
 CC = gcc
 
@@ -23,7 +22,6 @@ tutorial/shaders/frag.spv: tutorial/shaders/shader.frag
 tutorial/bin/triangle: tutorial/triangle.cpp
 	@mkdir -p tutorial/bin
 	g++ $(CFLAGS_) -o $@ $^ $(LDFLAGS)
-
 
 # make sure the template compiles
 
