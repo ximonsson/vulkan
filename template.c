@@ -1293,6 +1293,207 @@ static void create_cmd_pool ()
 	assert (vkCreateCommandPool (device, &info, NULL, &cmdpool) == VK_SUCCESS);
 }
 
+static uint32_t find_mem_type (uint32_t type_filter, VkMemoryPropertyFlags props)
+{
+	VkPhysicalDeviceMemoryProperties mem_props;
+	vkGetPhysicalDeviceMemoryProperties (physical_device, &mem_props);
+
+	for (uint32_t i = 0; i < mem_props.memoryTypeCount; i ++)
+	{
+		if
+		(
+			(type_filter & (1 << i)) &&
+			(mem_props.memoryTypes[i].propertyFlags & props) == props
+		)
+			return i;
+	}
+
+	fprintf (stderr, "failed to find suitable memory type!");
+	exit (1);
+}
+
+static void create_img
+(
+	uint32_t w,
+	uint32_t h,
+	VkFormat fmt,
+	VkImageTiling tiling,
+	VkImageUsageFlags usage,
+	VkMemoryPropertyFlags props,
+	VkImage *img,
+	VkDeviceMemory *img_mem
+)
+{
+	VkImageCreateInfo img_info = { 0 };
+	img_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	img_info.imageType = VK_IMAGE_TYPE_2D;
+	img_info.extent.width = w;
+	img_info.extent.height = h;
+	img_info.extent.depth = 1;
+	img_info.mipLevels = 1;
+	img_info.arrayLayers = 1;
+	img_info.format = fmt;
+	img_info.tiling = tiling;
+	img_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	img_info.usage = usage;
+	img_info.samples = VK_SAMPLE_COUNT_1_BIT;
+	img_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	assert (vkCreateImage (device, &img_info, NULL, img) == VK_SUCCESS);
+
+	VkMemoryRequirements memreq;
+	vkGetImageMemoryRequirements (device, *img, &memreq);
+
+	VkMemoryAllocateInfo alloc_info = { 0 };
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = memreq.size;
+	alloc_info.memoryTypeIndex = find_mem_type (memreq.memoryTypeBits, props);
+
+	assert (vkAllocateMemory (device, &alloc_info, NULL, img_mem) == VK_SUCCESS);
+
+	vkBindImageMemory (device, *img, *img_mem, 0);
+}
+
+static VkCommandBuffer begin_single_time_cmds ()
+{
+	VkCommandBufferAllocateInfo alloc_info = { 0 };
+	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc_info.commandPool = cmdpool;
+	alloc_info.commandBufferCount = 1;
+
+	VkCommandBuffer cmd_buf;
+	vkAllocateCommandBuffers (device, &alloc_info, &cmd_buf);
+
+	VkCommandBufferBeginInfo begin_info = { 0 };
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer (cmd_buf, &begin_info);
+
+	return cmd_buf;
+}
+
+static void end_single_time_cmds (VkCommandBuffer cmdbuf)
+{
+	vkEndCommandBuffer (cmdbuf);
+
+	VkSubmitInfo submit_info = { 0 };
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &cmdbuf;
+
+	vkQueueSubmit (gfx_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle (gfx_queue);
+
+	vkFreeCommandBuffers (device, cmdpool, 1, &cmdbuf);
+}
+
+#define HAS_STENCIL_COMPONENT(fmt) \
+	( fmt == VK_FORMAT_D32_SFLOAT_S8_UINT || fmt == VK_FORMAT_D24_UNORM_S8_UINT )
+
+static void transition_img_layout
+(
+	VkImage img,
+	VkFormat fmt,
+	VkImageLayout old_layout,
+	VkImageLayout new_layout
+)
+{
+	VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+	VkImageMemoryBarrier barrier = { 0 };
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = old_layout;
+	barrier.newLayout = new_layout;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = img;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.srcAccessMask = 0; // TODO
+	barrier.dstAccessMask = 0; // TODO
+
+	if (new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+	{
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+		if (HAS_STENCIL_COMPONENT (fmt))
+			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+	}
+
+	VkPipelineStageFlags src_stage;
+	VkPipelineStageFlags dst_stage;
+
+	if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+	{
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dst_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	}
+	else if
+	(
+		old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+		new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+	)
+	{
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		src_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		dst_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	}
+	else if
+	(
+		old_layout == VK_IMAGE_LAYOUT_UNDEFINED &&
+		new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+	)
+	{
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask =
+			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		src_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		dst_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	}
+	else
+	{
+		fprintf (stderr, "unsupported layout transition");
+		exit (1);
+	}
+
+	vkCmdPipelineBarrier (cmdbuf, src_stage, dst_stage, 0, 0, NULL, 0, NULL, 1, &barrier);
+
+	end_single_time_cmds (cmdbuf);
+}
+
+static void create_depth_buffer ()
+{
+	VkFormat depth_fmt = find_depth_fmt ();
+	create_img
+	(
+		swapchain_ext.width,
+		swapchain_ext.height,
+		depth_fmt,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		&depth_img,
+		&depth_img_mem
+	);
+	create_img_view (&depth_img_view, depth_img, depth_fmt, VK_IMAGE_ASPECT_DEPTH_BIT);
+	transition_img_layout
+	(
+		depth_img,
+		depth_fmt,
+		VK_IMAGE_LAYOUT_UNDEFINED,
+		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+	);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1308,6 +1509,7 @@ static int init_vulkan ()
 	create_descriptor_set_layout ();
 	create_gfx_pipeline ();
 	create_cmd_pool ();
+	create_depth_buffer ();
 
 	return 0;
 }
