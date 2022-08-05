@@ -1281,6 +1281,18 @@ static void create_gfx_pipeline ()
 	free (attrib_desc);
 }
 
+static void create_cmd_pool ()
+{
+	QueueFamilyIndices idx = find_queue_families (physical_device);
+
+	VkCommandPoolCreateInfo info = { 0 };
+	info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	info.queueFamilyIndex = idx.gfx_family;
+	//info.flags = 0; // optional
+
+	assert (vkCreateCommandPool (device, &info, NULL, &cmdpool) == VK_SUCCESS);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1295,6 +1307,7 @@ static int init_vulkan ()
 	create_render_pass ();
 	create_descriptor_set_layout ();
 	create_gfx_pipeline ();
+	create_cmd_pool ();
 
 	return 0;
 }
