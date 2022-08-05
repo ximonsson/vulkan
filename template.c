@@ -1494,6 +1494,27 @@ static void create_depth_buffer ()
 	);
 }
 
+static void create_framebuffers ()
+{
+	swapchain_framebufs = calloc (n_swapchain_img_views, sizeof (VkFramebuffer));
+
+	for (size_t i = 0; i < n_swapchain_img_views; i ++)
+	{
+		VkImageView attachments[] = { swapchain_img_views[i], depth_img_view };
+
+		VkFramebufferCreateInfo info = { 0 };
+		info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		info.renderPass = render_pass;
+		info.attachmentCount = 2;
+		info.pAttachments = attachments;
+		info.width = swapchain_ext.width;
+		info.height = swapchain_ext.height;
+		info.layers = 1;
+
+		assert (vkCreateFramebuffer (device, &info, NULL, &swapchain_framebufs[i]) == VK_SUCCESS);
+	}
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1510,6 +1531,7 @@ static int init_vulkan ()
 	create_gfx_pipeline ();
 	create_cmd_pool ();
 	create_depth_buffer ();
+	create_framebuffers ();
 
 	return 0;
 }
@@ -1524,6 +1546,7 @@ static void deinit_vulkan ()
 {
 	free (swapchain_imgs);
 	free (swapchain_img_views);
+	free (swapchain_framebufs);
 }
 
 void deinit ()
