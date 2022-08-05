@@ -1006,6 +1006,41 @@ void create_render_pass ()
 	assert (vkCreateRenderPass (device, &info, NULL, &render_pass) == VK_SUCCESS);
 }
 
+static void create_descriptor_set_layout ()
+{
+	VkDescriptorSetLayoutBinding ubo_layout_binding = { 0 };
+	ubo_layout_binding.binding = 0;
+	ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	ubo_layout_binding.descriptorCount = 1;
+	ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	ubo_layout_binding.pImmutableSamplers = NULL; // optional
+
+	VkDescriptorSetLayoutBinding sampler_layout_binding = { 0 };
+	sampler_layout_binding.binding = 1;
+	sampler_layout_binding.descriptorCount = 1;
+	sampler_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	sampler_layout_binding.pImmutableSamplers = NULL;
+	sampler_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutBinding bindings[] =
+	{
+		ubo_layout_binding, sampler_layout_binding
+	};
+	VkDescriptorSetLayoutCreateInfo layout_info = { 0 };
+	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.bindingCount = 2;
+	layout_info.pBindings = bindings;
+
+	assert (
+		vkCreateDescriptorSetLayout (
+			device,
+			&layout_info,
+			NULL,
+			&descriptor_set_layout
+		) == VK_SUCCESS
+	);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1018,6 +1053,7 @@ static int init_vulkan ()
 	create_swapchain ();
 	create_img_views ();
 	create_render_pass ();
+	create_descriptor_set_layout ();
 
 	return 0;
 }
