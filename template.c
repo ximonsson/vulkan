@@ -16,7 +16,7 @@
 /**
  *		Define vertices.
  *
- * These should be changed for application specific.
+ * these should be changed for application specific.
  */
 static const float vertices[8][3] =
 {
@@ -1677,6 +1677,89 @@ static void create_tex_sampler ()
 	assert (vkCreateSampler (device, &info, NULL, &tex_sampler) == VK_SUCCESS);
 }
 
+static void copy_buf (VkBuffer src, VkBuffer dst, VkDeviceSize size)
+{
+	VkCommandBuffer cmdbuf = begin_single_time_cmds ();
+
+	VkBufferCopy copy = { 0 };
+	copy.srcOffset = 0; // optional
+	copy.dstOffset = 0; // optional
+	copy.size = size;
+	vkCmdCopyBuffer (cmdbuf, src, dst, 1, &copy);
+
+	end_single_time_cmds (cmdbuf);
+}
+
+static void create_vx_buf ()
+{
+	VkDeviceSize size = sizeof (float) * 8 * 3;
+
+	VkBuffer staging_buf;
+	VkDeviceMemory staging_buf_mem;
+	create_buffer
+	(
+		size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&staging_buf,
+		&staging_buf_mem
+	);
+
+	void *data;
+	vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+	memcpy (data, vertices, (size_t) size);
+	vkUnmapMemory (device, staging_buf_mem);
+
+	create_buffer
+	(
+		size,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		&vx_buf,
+		&vx_buf_mem
+	);
+
+	copy_buf (staging_buf, vx_buf, size);
+
+	vkDestroyBuffer (device, staging_buf, NULL);
+	vkFreeMemory (device, staging_buf_mem, NULL);
+}
+
+static void create_idx_buf ()
+{
+	VkDeviceSize size = sizeof (uint16_t) * 12;
+
+	VkBuffer staging_buf;
+	VkDeviceMemory staging_buf_mem;
+	create_buffer
+	(
+		size,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		&staging_buf,
+		&staging_buf_mem
+	);
+
+	void *data;
+	vkMapMemory (device, staging_buf_mem, 0, size, 0, &data);
+	memcpy (data, indices, (size_t) size);
+	vkUnmapMemory (device, staging_buf_mem);
+
+	create_buffer
+	(
+		size,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		&idx_buf,
+		&idx_buf_mem
+	);
+
+	copy_buf (staging_buf, idx_buf, size);
+
+	vkDestroyBuffer (device, staging_buf, NULL);
+	vkFreeMemory (device, staging_buf_mem, NULL);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1697,8 +1780,8 @@ static int init_vulkan ()
 	create_tex_img ();
 	create_tex_img_view ();
 	create_tex_sampler ();
-	//create_vx_buf ();
-	//create_idx_buf ();
+	create_vx_buf ();
+	create_idx_buf ();
 	//create_uniform_buf ();
 	//create_descriptor_pool ();
 	//create_descriptor_sets ();
