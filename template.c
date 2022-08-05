@@ -898,6 +898,114 @@ static void create_img_views ()
 	}
 }
 
+static VkFormat find_supported_fmt
+(
+	VkFormat *candidates,
+	uint32_t n_candidates,
+	VkImageTiling tiling,
+	VkFormatFeatureFlags feats
+)
+{
+	for (int i = 0; i < n_candidates; i ++)
+	{
+		VkFormat fmt = candidates[i];
+		VkFormatProperties p;
+		vkGetPhysicalDeviceFormatProperties (physical_device, fmt, &p);
+
+		if (tiling == VK_IMAGE_TILING_LINEAR && (p.linearTilingFeatures & feats) == feats)
+		{
+			return fmt;
+		}
+		else if (tiling == VK_IMAGE_TILING_OPTIMAL && (p.optimalTilingFeatures & feats) == feats)
+		{
+			return fmt;
+		}
+	}
+
+	fprintf (stderr, "failed to find supported format");
+	exit (1);
+}
+
+static VkFormat find_depth_fmt ()
+{
+	VkFormat candidates[] =
+	{
+		VK_FORMAT_D32_SFLOAT,
+		VK_FORMAT_D32_SFLOAT_S8_UINT,
+		VK_FORMAT_D24_UNORM_S8_UINT
+	};
+	return find_supported_fmt
+	(
+		candidates,
+		3,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+	);
+}
+
+void create_render_pass ()
+{
+	VkSubpassDependency dep = { 0 };
+	dep.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dep.dstSubpass = 0;
+	dep.srcStageMask =
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+		VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dep.srcAccessMask = 0;
+	dep.dstStageMask =
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+		VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dep.dstAccessMask =
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+		VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+	VkAttachmentDescription color = { 0 };
+	color.format = swapchain_img_fmt;
+	color.samples = VK_SAMPLE_COUNT_1_BIT;
+	color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentReference color_ref = { 0 };
+	color_ref.attachment = 0;
+	color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentDescription depth = { 0 };
+	depth.format = find_depth_fmt ();
+	depth.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depth_ref = { 0 };
+	depth_ref.attachment = 1;
+	depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = { 0 };
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &color_ref;
+	subpass.pDepthStencilAttachment = &depth_ref;
+
+	VkAttachmentDescription attachments[2] = { color, depth };
+	VkRenderPassCreateInfo info = { 0 };
+	info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	info.attachmentCount = 2;
+	info.pAttachments = attachments;
+	info.subpassCount = 1;
+	info.pSubpasses = &subpass;
+	info.dependencyCount = 1;
+	info.pDependencies = &dep;
+
+	assert (vkCreateRenderPass (device, &info, NULL, &render_pass) == VK_SUCCESS);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -909,6 +1017,7 @@ static int init_vulkan ()
 	create_logical_device ();
 	create_swapchain ();
 	create_img_views ();
+	create_render_pass ();
 
 	return 0;
 }
