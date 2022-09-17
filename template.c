@@ -74,6 +74,11 @@ static const int MAX_FRAMES_IN_FLIGHT = 2;
 static size_t read_file (const char *fname, char **data)
 {
 	FILE* fp = fopen (fname, "rb");
+	if (!fp)
+	{
+		fprintf (stderr, "could not find file %s!\n", fname);
+		exit (1);
+	}
 
 	// get file size
 	fseek (fp, 0, SEEK_END);
@@ -85,7 +90,8 @@ static size_t read_file (const char *fname, char **data)
 	*data = (char *) malloc (fsize);
 	if ((result = fread (*data, 1, fsize, fp)) != fsize)
 	{
-		return -1;
+		fprintf (stderr, "failed to read file contents!\n");
+		exit (1);
 	}
 
 	return result;
@@ -1098,6 +1104,10 @@ static uint32_t vx_attrib_desc (VkVertexInputAttributeDescription **desc)
 static void create_gfx_pipeline ()
 {
 	// read shader byte code
+
+	//
+	// TODO remove hard codings towards shader source
+	//
 
 	char *vx_shader_code, *frag_shader_code;
 	size_t vx_shader_size = read_file ("build/vert.spv", &vx_shader_code);

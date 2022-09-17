@@ -29,11 +29,19 @@ template: template.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) -c -o build/$@.o $^
 
-test: template
+shaders: build/vert.spv build/frag.spv
+
+build/frag.spv: shaders/shader.frag
+	$(GLSL) -V -o $@ $^
+
+build/vert.spv: shaders/shader.vert
+	$(GLSL) -V -o $@ $^
+
+test: template shaders
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -o bin/test build/*.o $(LDFLAGS)
 
 clean:
-	rm -r bin
-	rm -r tutorial/bin
-	rm -r build
+	if [ -d bin ]; then rm -r bin; fi
+	if [ -d build ]; then rm -r build; fi
+	if [ -d tutorial/bin ]; then rm -r tutorial/bin; fi
