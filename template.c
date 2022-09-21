@@ -1808,6 +1808,61 @@ static void create_descriptor_pool ()
 	assert (vkCreateDescriptorPool (device, &pool_info, NULL, &descriptor_pool) == VK_SUCCESS);
 }
 
+static void create_descriptor_sets ()
+{
+	//std::vector<VkDescriptorSetLayout> layouts (swapchain_images.size (), descriptor_set_layout);
+	VkDescriptorSetLayout layouts[n_swapchain_imgs];
+
+	VkDescriptorSetAllocateInfo alloc_info = { 0 };
+	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc_info.descriptorPool = descriptor_pool;
+	alloc_info.descriptorSetCount = n_swapchain_imgs;
+	alloc_info.pSetLayouts = layouts;
+
+	//descriptor_sets.resize (n_swapchain_imgs);
+	descriptor_sets = malloc (n_swapchain_imgs * sizeof (VkDescriptorSet));
+	assert (vkAllocateDescriptorSets (device, &alloc_info, descriptor_sets) == VK_SUCCESS);
+
+	for (size_t i = 0; i < n_swapchain_imgs; i ++)
+	{
+		VkDescriptorBufferInfo buffer_info = { 0 };
+		buffer_info.buffer = unif_buf[i];
+		buffer_info.offset = 0;
+		// TODO what should this be?
+		//buffer_info.range = sizeof (UniformBufferObject);
+		buffer_info.range = 0;
+
+		VkDescriptorImageInfo img_info = { 0 };
+		img_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		img_info.imageView = tex_img_view;
+		img_info.sampler = tex_sampler;
+
+		VkWriteDescriptorSet writes[2] = { 0 };
+
+		writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[0].dstSet = descriptor_sets[i];
+		writes[0].dstBinding = 0;
+		writes[0].dstArrayElement = 0;
+		writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		writes[0].descriptorCount = 1;
+		writes[0].pBufferInfo = &buffer_info;
+		writes[0].pImageInfo = NULL; // optional
+		writes[0].pTexelBufferView = NULL; // optional
+
+		writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writes[1].dstSet = descriptor_sets[i];
+		writes[1].dstBinding = 1;
+		writes[1].dstArrayElement = 0;
+		writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		writes[1].descriptorCount = 1;
+		writes[1].pBufferInfo = NULL;
+		writes[1].pImageInfo = &img_info; // optional
+		writes[1].pTexelBufferView = NULL; // optional
+
+		vkUpdateDescriptorSets (device, 2, writes, 0, NULL);
+	}
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1832,7 +1887,7 @@ static int init_vulkan ()
 	create_idx_buf ();
 	create_uniform_buf ();
 	create_descriptor_pool ();
-	//create_descriptor_sets ();
+	create_descriptor_sets ();
 	//create_cmd_buffers ();
 	//create_sync ();
 
