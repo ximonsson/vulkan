@@ -1790,6 +1790,24 @@ static void create_uniform_buf ()
 		);
 }
 
+static void create_descriptor_pool ()
+{
+	VkDescriptorPoolSize pool_sizes[2] = { 0 };
+
+	pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	pool_sizes[0].descriptorCount = n_swapchain_imgs;
+	pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	pool_sizes[1].descriptorCount = n_swapchain_imgs;
+
+	VkDescriptorPoolCreateInfo pool_info = { 0 };
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.poolSizeCount = 2;
+	pool_info.pPoolSizes = pool_sizes;
+	pool_info.maxSets = n_swapchain_imgs;
+
+	assert (vkCreateDescriptorPool (device, &pool_info, NULL, &descriptor_pool) == VK_SUCCESS);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1813,7 +1831,7 @@ static int init_vulkan ()
 	create_vx_buf ();
 	create_idx_buf ();
 	create_uniform_buf ();
-	//create_descriptor_pool ();
+	create_descriptor_pool ();
 	//create_descriptor_sets ();
 	//create_cmd_buffers ();
 	//create_sync ();
