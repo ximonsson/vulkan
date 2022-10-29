@@ -349,7 +349,7 @@ static VkCommandBuffer *cmdbufs;
 static VkSemaphore *img_available;
 static VkSemaphore *render_finished;
 static VkFence *in_flight_fences;
-static VkFence *images_in_flight;
+static VkFence *imgs_in_flight;
 
 /* vertex buffer */
 static VkBuffer vx_buf;
@@ -1885,7 +1885,6 @@ static void create_cmdbufs ()
 
 		assert (vkBeginCommandBuffer (cmdbufs[i], &info) == VK_SUCCESS);
 
-		//std::array<VkClearValue, 2> clear_values = { 0 };
 		VkClearColorValue clclrv = { 0.0f, 0.0f, 0.0f, 1.0f };
 		VkClearDepthStencilValue clstencilv = { 1.0f, 0.f };
 		VkClearValue clear_values[2] = { 0 };
@@ -1930,6 +1929,29 @@ static void create_cmdbufs ()
 	}
 }
 
+static void create_sync ()
+{
+	img_available = calloc (MAX_FRAMES_IN_FLIGHT, sizeof (VkSemaphore));
+	render_finished = calloc (MAX_FRAMES_IN_FLIGHT, sizeof (VkSemaphore));
+	in_flight_fences = calloc (MAX_FRAMES_IN_FLIGHT, sizeof (VkFence));
+	imgs_in_flight = calloc (n_swapchain_imgs, sizeof (VkFence));
+
+	VkSemaphoreCreateInfo semaphore_info = { 0 };
+	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fence_info = { 0 };
+	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i ++)
+		assert
+		(
+			vkCreateSemaphore (device, &semaphore_info, NULL, &img_available[i]) == VK_SUCCESS &&
+			vkCreateSemaphore (device, &semaphore_info, NULL, &render_finished[i]) == VK_SUCCESS &&
+			vkCreateFence (device, &fence_info, NULL, &in_flight_fences[i]) == VK_SUCCESS
+		);
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1956,7 +1978,7 @@ static int init_vulkan ()
 	create_descriptor_pool ();
 	create_descriptor_sets ();
 	create_cmdbufs ();
-	//create_sync ();
+	create_sync ();
 
 	return 0;
 }
@@ -1974,6 +1996,11 @@ static void deinit_vulkan ()
 	free (swapchain_imgs);
 	free (swapchain_img_views);
 	free (swapchain_framebufs);
+	free (cmdbufs);
+	free (img_available);
+	free (render_finished);
+	free (in_flight_fences);
+	free (imgs_in_flight);
 }
 
 void deinit ()
