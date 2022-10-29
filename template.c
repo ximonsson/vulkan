@@ -345,7 +345,7 @@ static VkPipeline pipeline;
 
 /* commands */
 static VkCommandPool cmdpool;
-static VkCommandBuffer *cmdbuffers;
+static VkCommandBuffer *cmdbufs;
 static VkSemaphore *img_available;
 static VkSemaphore *render_finished;
 static VkFence *in_flight_fences;
@@ -1375,16 +1375,16 @@ static VkCommandBuffer begin_single_time_cmds ()
 	alloc_info.commandPool = cmdpool;
 	alloc_info.commandBufferCount = 1;
 
-	VkCommandBuffer cmd_buf;
-	vkAllocateCommandBuffers (device, &alloc_info, &cmd_buf);
+	VkCommandBuffer cmdbuf;
+	vkAllocateCommandBuffers (device, &alloc_info, &cmdbuf);
 
 	VkCommandBufferBeginInfo begin_info = { 0 };
 	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-	vkBeginCommandBuffer (cmd_buf, &begin_info);
+	vkBeginCommandBuffer (cmdbuf, &begin_info);
 
-	return cmd_buf;
+	return cmdbuf;
 }
 
 static void end_single_time_cmds (VkCommandBuffer cmdbuf)
@@ -1863,6 +1863,73 @@ static void create_descriptor_sets ()
 	}
 }
 
+static void create_cmdbufs ()
+{
+	uint32_t n_cmdbufs = n_swapchain_img_views;
+	cmdbufs = calloc (n_cmdbufs, sizeof (VkCommandBuffer));
+
+	VkCommandBufferAllocateInfo allocinfo = { 0 };
+	allocinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocinfo.commandPool = cmdpool;
+	allocinfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocinfo.commandBufferCount = n_cmdbufs;
+
+	assert (vkAllocateCommandBuffers (device, &allocinfo, cmdbufs) == VK_SUCCESS);
+
+	for (size_t i = 0; i < n_cmdbufs; i ++)
+	{
+		VkCommandBufferBeginInfo info = { 0 };
+		info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		//info.flags = 0; // optional
+		//info.pInheritanceInfo = nullptr; // optional
+
+		assert (vkBeginCommandBuffer (cmdbufs[i], &info) == VK_SUCCESS);
+
+		//std::array<VkClearValue, 2> clear_values = { 0 };
+		VkClearColorValue clclrv = { 0.0f, 0.0f, 0.0f, 1.0f };
+		VkClearDepthStencilValue clstencilv = { 1.0f, 0.f };
+		VkClearValue clear_values[2] = { 0 };
+		clear_values[0].color = clclrv;
+		clear_values[1].depthStencil = clstencilv;
+
+		VkOffset2D offset = { 0, 0 };
+		VkRenderPassBeginInfo render_pass_info = { 0 };
+		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		render_pass_info.renderPass = render_pass;
+		render_pass_info.framebuffer = swapchain_framebufs[i];
+		render_pass_info.renderArea.offset = offset;
+		render_pass_info.renderArea.extent = swapchain_ext;
+		render_pass_info.clearValueCount = 2;
+		render_pass_info.pClearValues = clear_values;
+
+		vkCmdBeginRenderPass (cmdbufs[i], &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+		vkCmdBindPipeline (cmdbufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+		VkBuffer vx_bufs[] = { vx_buf };
+		VkDeviceSize offsets[] = { 0 };
+		vkCmdBindVertexBuffers (cmdbufs[i], 0, 1, vx_bufs, offsets);
+
+		vkCmdBindIndexBuffer (cmdbufs[i], idx_buf, 0, VK_INDEX_TYPE_UINT16);
+
+		vkCmdBindDescriptorSets
+		(
+			cmdbufs[i],
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			pipeline_layout,
+			0,
+			1,
+			&descriptor_sets[i],
+			0,
+			NULL
+		);
+		// TODO solve this hard coding for number of indices
+		vkCmdDrawIndexed (cmdbufs[i], 12, 1, 0, 0, 0);  // number of indices = 12
+		vkCmdEndRenderPass (cmdbufs[i]);
+
+		assert (vkEndCommandBuffer (cmdbufs[i]) == VK_SUCCESS);
+	}
+}
+
 static int init_vulkan ()
 {
 	create_instance ();
@@ -1888,7 +1955,7 @@ static int init_vulkan ()
 	create_uniform_buf ();
 	create_descriptor_pool ();
 	create_descriptor_sets ();
-	//create_cmd_buffers ();
+	create_cmdbufs ();
 	//create_sync ();
 
 	return 0;
