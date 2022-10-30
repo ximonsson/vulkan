@@ -1989,6 +1989,39 @@ void init ()
 	init_vulkan ();
 }
 
+static void update_unif_buf (uint32_t img)
+{
+	/*
+	static auto start_time = std::chrono::high_resolution_clock::now ();
+
+	auto current_time = std::chrono::high_resolution_clock::now ();
+	float time = std::chrono::duration<float, std::chrono::seconds::period>
+	(
+		current_time - start_time
+	).count();
+
+	UniformBufferObject ubo {};
+	ubo.model = glm::rotate
+	(
+		glm::mat4 (1.0f), time * glm::radians (90.0f), glm::vec3 (0.0, 0.0, 1.0f)
+	);
+	ubo.view = glm::lookAt
+	(
+		glm::vec3 (2.0f, 2.0f, 2.0f), glm::vec3 (0.0f, 0.0f, 0.0f), glm::vec3 (0.0f, 0.0f, 1.0f)
+	);
+	ubo.proj = glm::perspective
+	(
+		glm::radians (45.0f), swapchain_ext.width / (float) swapchain_ext.height, 0.1f, 10.0f
+	);
+	ubo.proj[1][1] *= -1;
+	*/
+
+	//void* data;
+	//vkMapMemory (device, unif_buf_mem[img], 0, sizeof (ubo), 0, &data);
+	//memcpy (data, &ubo, sizeof (ubo));
+	//vkUnmapMemory (device, unif_buf_mem[img]);
+}
+
 static void deinit_vulkan ()
 {
 	free (unif_buf);
