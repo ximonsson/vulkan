@@ -1989,37 +1989,99 @@ void init ()
 	init_vulkan ();
 }
 
+/**
+ * update the uniform buffers with new data?
+ */
 static void update_unif_buf (uint32_t img)
 {
 	/*
-	static auto start_time = std::chrono::high_resolution_clock::now ();
+	in the tutorial there was quite a lot of code here about rotating the
+	square in the scene based on the time so it followed a uniform
+	update cycle. this feels a little unnecessary here.
 
-	auto current_time = std::chrono::high_resolution_clock::now ();
-	float time = std::chrono::duration<float, std::chrono::seconds::period>
-	(
-		current_time - start_time
-	).count();
-
-	UniformBufferObject ubo {};
-	ubo.model = glm::rotate
-	(
-		glm::mat4 (1.0f), time * glm::radians (90.0f), glm::vec3 (0.0, 0.0, 1.0f)
-	);
-	ubo.view = glm::lookAt
-	(
-		glm::vec3 (2.0f, 2.0f, 2.0f), glm::vec3 (0.0f, 0.0f, 0.0f), glm::vec3 (0.0f, 0.0f, 1.0f)
-	);
-	ubo.proj = glm::perspective
-	(
-		glm::radians (45.0f), swapchain_ext.width / (float) swapchain_ext.height, 0.1f, 10.0f
-	);
-	ubo.proj[1][1] *= -1;
+	this function should in general be to send the updated information about
+	the scene to the gpu.
 	*/
+}
 
-	//void* data;
-	//vkMapMemory (device, unif_buf_mem[img], 0, sizeof (ubo), 0, &data);
-	//memcpy (data, &ubo, sizeof (ubo));
-	//vkUnmapMemory (device, unif_buf_mem[img]);
+void cleanup_swapchain ()
+{
+	vkDestroyImageView (device, depth_img_view, NULL);
+	vkDestroyImage (device, depth_img, NULL);
+	vkFreeMemory (device, depth_img_mem, NULL);
+
+	for (int i = 0; i < n_swapchain_imgs; i++)
+		vkDestroyFramebuffer (device, swapchain_framebufs[i], NULL);
+
+	vkFreeCommandBuffers (device, cmdpool, n_swapchain_img_views, cmdbufs);
+
+	vkDestroyPipeline (device, pipeline, NULL);
+	vkDestroyPipelineLayout (device, pipeline_layout, NULL);
+	vkDestroyRenderPass (device, render_pass, NULL);
+
+	for (int i = 0; i < n_swapchain_img_views; i++)
+		vkDestroyImageView (device, swapchain_img_views[i], NULL);
+
+	vkDestroySwapchainKHR (device, swapchain, NULL);
+
+	for (int i = 0; i < n_swapchain_imgs; i++)
+	{
+		vkDestroyBuffer (device, unif_buf[i], NULL);
+		vkFreeMemory (device, unif_buf_mem[i], NULL);
+	}
+
+	vkDestroyDescriptorPool (device, descriptor_pool, NULL);
+}
+
+
+void recreate_swapchain ()
+{
+	// wait until the window is a size other than 0
+
+	int w = 0, h = 0;
+	glfwGetFramebufferSize (win, &w, &h);
+	while (w == 0 || h == 0)
+	{
+		glfwWaitEvents ();
+		glfwGetFramebufferSize (win, &w, &h);
+	}
+
+	vkDeviceWaitIdle (device);
+
+	cleanup_swapchain ();
+	create_swapchain ();
+	create_img_views ();
+	create_render_pass ();
+	create_gfx_pipeline ();
+	create_framebuffers ();
+	create_uniform_buf ();
+	create_descriptor_pool ();
+	create_descriptor_sets ();
+	create_cmdbufs ();
+}
+
+void draw ()
+{
+	vkWaitForFences (device, 1, &in_flight_fences[current_frame], VK_TRUE, UINT64_MAX);
+	uint32_t img_idx;
+	VkResult res = vkAcquireNextImageKHR
+	(
+		device,
+		swapchain,
+		UINT64_MAX,
+		img_available[current_frame],
+		VK_NULL_HANDLE,
+		&img_idx
+	);
+
+	if (res == VK_ERROR_OUT_OF_DATE_KHR)
+	{
+		recreate_swapchain ();
+		return;
+	}
+
+
+
 }
 
 static void deinit_vulkan ()
