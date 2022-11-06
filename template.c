@@ -2079,9 +2079,6 @@ void draw ()
 		recreate_swapchain ();
 		return;
 	}
-
-
-
 }
 
 static void deinit_vulkan ()
