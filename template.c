@@ -1812,6 +1812,13 @@ static void create_descriptor_sets ()
 {
 	//std::vector<VkDescriptorSetLayout> layouts (swapchain_images.size (), descriptor_set_layout);
 	VkDescriptorSetLayout layouts[n_swapchain_imgs];
+	for (size_t i = 0; i < n_swapchain_imgs; i ++)
+		memcpy
+		(
+			&layouts[i],
+			&descriptor_set_layout,
+			sizeof (VkDescriptorSetLayout)
+		);
 
 	VkDescriptorSetAllocateInfo alloc_info = { 0 };
 	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1830,7 +1837,7 @@ static void create_descriptor_sets ()
 		buffer_info.offset = 0;
 		// TODO what should this be?
 		//buffer_info.range = sizeof (UniformBufferObject);
-		buffer_info.range = 0;
+		buffer_info.range = VK_WHOLE_SIZE;
 
 		VkDescriptorImageInfo img_info = { 0 };
 		img_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
